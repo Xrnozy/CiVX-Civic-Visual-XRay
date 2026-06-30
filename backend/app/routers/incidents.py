@@ -60,7 +60,7 @@ def update_incident(
 @router.post("/{incident_id}/verify")
 def verify_incident(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
     sb = get_supabase()
-    sb.table("incidents").update({"status": "verified"}).eq("id", incident_id).execute()
+    sb.table("incidents").update({"status": "verified", "verified_at": "now()"}).eq("id", incident_id).execute()
     log_audit(user.id, "verify", "incident", incident_id, {})
     return {"status": "verified"}
 

@@ -1,9 +1,16 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 import httpx
 
 from app.auth.firebase import AuthUser, require_roles
 from app.config import settings
 from app.db import get_supabase
+from app.services.analytics import (
+    build_by_barangay,
+    build_density,
+    build_resolved_history,
+    build_response_times,
+    build_summary,
+)
 
 router = APIRouter(prefix="/api/analytics", tags=["analytics"])
 LGU = ("lgu_admin", "lgu_staff")
@@ -11,22 +18,59 @@ LGU = ("lgu_admin", "lgu_staff")
 
 @router.get("/summary")
 def analytics_summary(user: AuthUser = Depends(require_roles(*LGU))):
-    sb = get_supabase()
-    incidents = sb.table("incidents").select("status,barangay,primary_issue_type,created_at,verified_at,resolved_at").execute().data or []
-    by_barangay: dict[str, int] = {}
-    by_status: dict[str, int] = {}
-    resolved_times = []
-    for inc in incidents:
-        b = inc.get("barangay") or "Unknown"
-        by_barangay[b] = by_barangay.get(b, 0) + 1
-        s = inc.get("status", "unknown")
-        by_status[s] = by_status.get(s, 0) + 1
-    return {
-        "total_incidents": len(incidents),
-        "by_barangay": by_barangay,
-        "by_status": by_status,
-        "resolved_count": by_status.get("resolved", 0),
-    }
+    return build_summary()
+
+
+@router.get("/by-barangay")
+def analytics_by_barangay(
+    barangay: str | None = None,
+    issue_type: str | None = None,
+    status: str | None = None,
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    return build_by_barangay(barangay=barangay, issue_type=issue_type, status=status)
+
+
+@router.get("/response-times")
+def analytics_response_times(
+    bucket: str = Query("none", pattern="^(none|weekly)$"),
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    return build_response_times(bucket=bucket)
+
+
+@router.get("/resolved-history")
+def analytics_resolved_history(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    barangay: str | None = None,
+    issue_type: str | None = None,
+    department_id: str | None = None,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    sort: str = "-resolved_at",
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    return build_resolved_history(
+        page=page,
+        page_size=page_size,
+        barangay=barangay,
+        issue_type=issue_type,
+        department_id=department_id,
+        from_date=from_date,
+        to_date=to_date,
+        sort=sort,
+    )
+
+
+@router.get("/density")
+def analytics_density(
+    mode: str = Query("barangay", pattern="^(barangay|grid)$"),
+    issue_type: str | None = None,
+    status: str | None = None,
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    return build_density(mode=mode, issue_type=issue_type, status=status)
 
 
 @router.get("/volunteers/top")
