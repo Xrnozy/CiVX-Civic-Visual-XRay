@@ -43,46 +43,18 @@ def top_volunteers(user: AuthUser = Depends(require_roles(*LGU))):
 
 @router.get("/community-impact")
 def community_impact():
-    import json
-    import time
-    from pathlib import Path
-
-    log_path = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
-
-    def _log(message: str, data: dict, hypothesis_id: str) -> None:
-        # #region agent log
-        try:
-            payload = {
-                "sessionId": "8b92e3",
-                "runId": "post-fix",
-                "hypothesisId": hypothesis_id,
-                "location": "analytics.py:community_impact",
-                "message": message,
-                "data": data,
-                "timestamp": int(time.time() * 1000),
-            }
-            with log_path.open("a", encoding="utf-8") as f:
-                f.write(json.dumps(payload) + "\n")
-        except Exception:
-            pass
-        # #endregion
-
     if not settings.supabase_configured:
-        _log("supabase not configured", {"url_set": bool(settings.supabase_url)}, "H1")
         return {"resolved_incidents": 0, "approved_cleanups": 0}
 
     try:
         sb = get_supabase()
         resolved = sb.table("incidents").select("*", count="exact", head=True).eq("status", "resolved").execute()
         cleanups = sb.table("cleanup_events").select("*", count="exact", head=True).eq("approval_status", "approved").execute()
-        result = {
+        return {
             "resolved_incidents": resolved.count or 0,
             "approved_cleanups": cleanups.count or 0,
         }
-        _log("community impact ok", result, "H2")
-        return result
-    except Exception as exc:
-        _log("community impact failed", {"error": type(exc).__name__, "detail": str(exc)[:200]}, "H3")
+    except Exception:
         return {"resolved_incidents": 0, "approved_cleanups": 0}
 
 

@@ -59,5 +59,23 @@ class Settings(BaseSettings):
     def supabase_configured(self) -> bool:
         return bool(self.supabase_url and self.supabase_service_key)
 
+    @property
+    def resolved_firebase_credentials(self) -> str:
+        """Resolve service account path relative to infra/ when backend runs from backend/."""
+        raw = self.google_application_credentials
+        if not raw:
+            return ""
+        p = Path(raw)
+        if p.is_file():
+            return str(p.resolve())
+        infra_candidate = _REPO_ROOT / "infra" / p.name
+        if infra_candidate.is_file():
+            return str(infra_candidate.resolve())
+        if not p.is_absolute():
+            from_cwd = Path.cwd() / p
+            if from_cwd.is_file():
+                return str(from_cwd.resolve())
+        return raw
+
 
 settings = Settings()

@@ -18,7 +18,7 @@ def init_firebase() -> None:
     global _firebase_initialized
     if _firebase_initialized:
         return
-    cred_path = settings.google_application_credentials
+    cred_path = settings.resolved_firebase_credentials
     if cred_path and os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)

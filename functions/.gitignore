@@ -1,0 +1,36 @@
+# Compiled JavaScript files
+lib/**/*.js
+lib/**/*.js.map
+
+# TypeScript v1 declaration files
+typings/
+
+# Node.js dependency directory
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Secrets, credentials, and local key material
+*service-account*.json
+*firebase-service-account*.json
+*google-application-credentials*.json
+*credentials*.json
+*credential*.json
+*secret*.json
+*secrets*.json
+*private-key*.json
+*.pem
+*.key
+*.p8
+*.p12
+*.crt
+*.csr
+*.jks
+*.keystore
+
+# Local-only overrides and logs
+*.local
+*.log

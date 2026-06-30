@@ -9,12 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
-  "@googlemaps/js-api-loader": "^1.16.8",
-  "@googlemaps/markerclusterer": "^2.5.3",
-  "firebase": "^11.0.0",
-  "react": "^19.0.0",
-  "react-dom": "^19.0.0",
-  "react-router-dom": "^7.0.0"
+    "@dataconnect/generated": "file:src/dataconnect-generated",
+    "@googlemaps/js-api-loader": "^1.16.8",
+    "@googlemaps/markerclusterer": "^2.5.3",
+    "firebase": "^11.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.0.0",

@@ -198,6 +198,14 @@ a {
   border-color: var(--color-primary);
 }
 
+.btn-google {
+  @apply inline-flex items-center justify-center gap-3 rounded-full border border-hairline bg-canvas px-[22px] py-[11px] text-[17px] font-medium text-ink transition active:scale-95 disabled:opacity-50;
+}
+
+.btn-google:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-hairline));
+}
+
 /* Link on dark */
 .text-link-on-dark {
   color: var(--color-primary-on-dark);

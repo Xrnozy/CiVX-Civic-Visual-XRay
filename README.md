@@ -59,6 +59,24 @@ Run `supabase/migrations/001_initial_schema.sql` in your Supabase SQL editor.
 
 Create storage buckets: `report-photos`, `video-chunks`.
 
+### 2b. Firebase Authentication (email + Google)
+
+In [Firebase Console](https://console.firebase.google.com/) → your project → **Authentication** → **Sign-in method**:
+
+1. Enable **Email/Password**
+2. Enable **Google** and set a support email
+3. Under **Settings → Authorized domains**, ensure `localhost` is listed (for local dev)
+
+Copy your Web app config into `infra/.env`:
+
+```
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=civx-d53ad.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=civx-d53ad
+```
+
+Restart `npm run dev` after changing env vars.
+
 ### 3. Backend
 
 ```bash

@@ -1,4 +1,5 @@
-const API_URL = import.meta.env.VITE_API_URL || '';
+// In dev, use Vite proxy (/api → localhost:8000). In production, use VITE_API_URL.
+const API_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('civx_token');
