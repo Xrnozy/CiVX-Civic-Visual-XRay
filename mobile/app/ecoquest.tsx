@@ -11,7 +11,7 @@ interface Task {
 export default function EcoQuestScreen() {
   const [tasks, setTasks] = useState<Task[]>([]);
   useEffect(() => {
-    api<Task[]>('/api/ecoquest/tasks').then(setTasks).catch(() => setTasks([]));
+    api<Task[]>('/api/ecoquest/tasks?status=open').then(setTasks).catch(() => setTasks([]));
   }, []);
 
   return (

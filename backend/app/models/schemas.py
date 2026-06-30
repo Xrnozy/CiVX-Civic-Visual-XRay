@@ -54,6 +54,12 @@ class EcoQuestTaskCreate(BaseModel):
     required_proof: dict | None = None
 
 
+class EcoQuestTaskUpdate(BaseModel):
+    status: str | None = None
+    title: str | None = None
+    description: str | None = None
+
+
 class EcoQuestSubmit(BaseModel):
     before_photo_url: str | None = None
     after_photo_url: str | None = None

@@ -63,3 +63,22 @@ ISSUE_URGENCY = {
 }
 
 DEFAULT_MAP_CENTER = {"lat": 14.5995, "lng": 120.9842}  # Manila demo
+
+ECOQUEST_TASK_TYPES = [
+    "clean_sidewalk",
+    "collect_trash",
+    "clean_canal",
+    "plant_trees",
+    "remove_posters",
+    "report_illegal_dumping",
+    "assist_cleanup_drive",
+]
+
+ECOQUEST_STATUSES = [
+    "open",
+    "in_progress",
+    "pending_review",
+    "approved",
+    "rejected",
+    "closed",
+]
