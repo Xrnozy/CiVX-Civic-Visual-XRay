@@ -33,7 +33,7 @@ export default function MapPage() {
       <SubNavFrosted
         title="Community Map"
         lead="Public issues and approved cleanup events near you"
-        action={<Link to="/login"><ButtonPrimary>Report Issue</ButtonPrimary></Link>}
+        action={<Link to="/report"><ButtonPrimary>Report Issue</ButtonPrimary></Link>}
       />
       <div className="page-content">
         <div className="mb-6 flex flex-wrap items-center gap-4">

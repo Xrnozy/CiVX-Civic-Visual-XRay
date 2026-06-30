@@ -4,6 +4,7 @@ import MapPage from './pages/MapPage';
 import EventsPage from './pages/EventsPage';
 import GalleryPage from './pages/GalleryPage';
 import TransparencyPage from './pages/TransparencyPage';
+import ReportPage from './pages/ReportPage';
 import LoginPage from './pages/LoginPage';
 import { LGULayout } from './pages/lgu/LGULayout';
 import LGUDashboard from './pages/lgu/LGUDashboard';
@@ -20,6 +21,7 @@ export default function App() {
       <Route path="/" element={<HomePage />} />
       <Route path="/map" element={<MapPage />} />
       <Route path="/events" element={<EventsPage />} />
+      <Route path="/report" element={<ReportPage />} />
       <Route path="/gallery" element={<GalleryPage />} />
       <Route path="/transparency" element={<TransparencyPage />} />
       <Route path="/login" element={<LoginPage />} />

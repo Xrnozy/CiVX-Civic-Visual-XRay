@@ -15,6 +15,8 @@ interface MarkerData {
 interface Props {
   markers: MarkerData[];
   lguMode?: boolean;
+  selectedLocation?: { latitude: number; longitude: number } | null;
+  onLocationPick?: (latitude: number, longitude: number) => void;
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -24,12 +26,31 @@ function keyHint(key: string): string {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
-export function CivicMap({ markers, lguMode = false }: Props) {
+function buildPinIcon(): any {
+  const svg = encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="56" viewBox="0 0 42 56">'
+      + '<defs><filter id="s" x="-40%" y="-20%" width="180%" height="180%">'
+      + '<feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.28"/></filter></defs>'
+        + '<path filter="url(#s)" d="M21 2C11.06 2 3 10.06 3 20c0 12.6 13.2 26.9 16.67 30.41a2 2 0 0 0 2.86 0C25.8 46.9 39 32.6 39 20 39 10.06 30.94 2 21 2z" fill="#d93025"/>'
+      + '<circle cx="21" cy="20" r="7.2" fill="#fff"/>'
+      + '</svg>'
+  );
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    scaledSize: new (window as any).google.maps.Size(42, 56),
+    anchor: new (window as any).google.maps.Point(21, 54),
+  };
+}
+
+export function CivicMap({ markers, lguMode = false, selectedLocation, onLocationPick }: Props) {
   const ref = useRef<HTMLDivElement>(null);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [map, setMap] = useState<any>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
+  const markerClustererRef = useRef<MarkerClusterer | null>(null);
+  const selectedMarkerRef = useRef<any>(null);
+  const clickListenerRef = useRef<any>(null);
 
   useEffect(() => {
     if (!apiKey) {
@@ -55,7 +76,13 @@ export function CivicMap({ markers, lguMode = false }: Props) {
       .load()
       .then(() => {
         if (cancelled || !ref.current) return;
-        const m = new google.maps.Map(ref.current, {
+        const gmaps = (window as any).google?.maps;
+        if (!gmaps) {
+          setMapError('load_failed');
+          setLoading(false);
+          return;
+        }
+        const m = new gmaps.Map(ref.current, {
           center: DEFAULT_MAP_CENTER,
           zoom: 13,
           styles: lguMode ? undefined : [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
@@ -79,15 +106,46 @@ export function CivicMap({ markers, lguMode = false }: Props) {
 
   useEffect(() => {
     if (!map) return;
+    const gmaps = (window as any).google?.maps;
+    if (!gmaps) return;
+    if (clickListenerRef.current) {
+      clickListenerRef.current.remove();
+      clickListenerRef.current = null;
+    }
+    if (!onLocationPick) return;
+    clickListenerRef.current = map.addListener('click', (event: any) => {
+      if (!event.latLng) return;
+      onLocationPick(event.latLng.lat(), event.latLng.lng());
+    });
+    return () => {
+      clickListenerRef.current?.remove();
+      clickListenerRef.current = null;
+    };
+  }, [map, onLocationPick]);
+
+  useEffect(() => {
+    if (!map) return;
+    const gmaps = (window as any).google?.maps;
+    if (!gmaps) return;
+    if (markerClustererRef.current) {
+      markerClustererRef.current.clearMarkers();
+      markerClustererRef.current = null;
+    }
+    if (selectedMarkerRef.current) {
+      selectedMarkerRef.current.dispose?.();
+      selectedMarkerRef.current.setMap(null);
+      selectedMarkerRef.current = null;
+    }
+
     const gmarkers = markers.map((mk) => {
-      const marker = new google.maps.Marker({
+      const marker = new gmaps.Marker({
         position: { lat: mk.latitude, lng: mk.longitude },
         title: mk.primary_issue_type || mk.title,
         icon:
           mk.type === 'cleanup'
             ? undefined
             : {
-                path: google.maps.SymbolPath.CIRCLE,
+                path: gmaps.SymbolPath.CIRCLE,
                 scale: 8,
                 fillColor: '#0066cc',
                 fillOpacity: 1,
@@ -96,8 +154,84 @@ export function CivicMap({ markers, lguMode = false }: Props) {
       });
       return marker;
     });
-    new MarkerClusterer({ markers: gmarkers, map });
-  }, [map, markers]);
+
+    if (selectedLocation) {
+      const haloMarker = new gmaps.Marker({
+        position: {
+          lat: selectedLocation.latitude,
+          lng: selectedLocation.longitude,
+        },
+        title: 'Pinned location',
+        zIndex: 2,
+        icon: {
+          path: gmaps.SymbolPath.CIRCLE,
+          scale: 14,
+          fillColor: '#d93025',
+          fillOpacity: 0.22,
+          strokeColor: '#d93025',
+          strokeOpacity: 0.42,
+          strokeWeight: 1,
+        },
+      });
+      haloMarker.setMap(map);
+
+      let pulsePhase = 0;
+      const pulseTimer = window.setInterval(() => {
+        pulsePhase += 0.14;
+        const scale = 12 + (Math.sin(pulsePhase) + 1) * 4;
+        const fillOpacity = 0.12 + (Math.sin(pulsePhase) + 1) * 0.08;
+        const strokeOpacity = 0.2 + (Math.sin(pulsePhase) + 1) * 0.12;
+        haloMarker.setIcon({
+          path: gmaps.SymbolPath.CIRCLE,
+          scale,
+          fillColor: '#d93025',
+          fillOpacity,
+          strokeColor: '#d93025',
+          strokeOpacity,
+          strokeWeight: 1,
+        });
+      }, 70);
+
+      const selectedMarker = new gmaps.Marker({
+        position: {
+          lat: selectedLocation.latitude,
+          lng: selectedLocation.longitude,
+        },
+        title: 'Pinned location',
+        icon: buildPinIcon(),
+        zIndex: 3,
+      });
+      selectedMarker.setMap(map);
+      selectedMarkerRef.current = {
+        primary: selectedMarker,
+        halo: haloMarker,
+        pulseTimer,
+        dispose() {
+          window.clearInterval(this.pulseTimer);
+        },
+        setMap(nextMap: any) {
+          this.primary.setMap(nextMap);
+          this.halo.setMap(nextMap);
+        },
+      };
+      map.panTo({ lat: selectedLocation.latitude, lng: selectedLocation.longitude });
+      if ((map.getZoom() ?? 0) < 15) {
+        map.setZoom(15);
+      }
+    }
+
+    if (gmarkers.length) {
+      markerClustererRef.current = new MarkerClusterer({ markers: gmarkers, map });
+    }
+
+    return () => {
+      markerClustererRef.current?.clearMarkers();
+      markerClustererRef.current = null;
+      selectedMarkerRef.current?.dispose?.();
+      selectedMarkerRef.current?.setMap(null);
+      selectedMarkerRef.current = null;
+    };
+  }, [map, markers, selectedLocation]);
 
   if (mapError) {
     const enableUrl = `https://console.cloud.google.com/apis/library/maps-backend.googleapis.com?project=${MAPS_PROJECT_ID}`;

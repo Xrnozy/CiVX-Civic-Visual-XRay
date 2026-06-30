@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { ButtonPrimary } from '../components/ui/Buttons';
 import { isFirebaseConfigured } from '../lib/firebase';
@@ -24,11 +24,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, ready } = useAuth();
+  const nextPath = new URLSearchParams(location.search).get('next') || POST_AUTH_PATH;
 
   useEffect(() => {
-    if (ready && user) navigate(POST_AUTH_PATH, { replace: true });
-  }, [ready, user, navigate]);
+    if (ready && user) navigate(nextPath, { replace: true });
+  }, [ready, user, navigate, nextPath]);
 
   async function completeAuth(cred: Awaited<ReturnType<typeof signInWithEmail>>) {
     try {
@@ -39,7 +41,7 @@ export default function LoginPage() {
       }
       throw sessionErr;
     }
-    navigate(POST_AUTH_PATH);
+    navigate(nextPath);
   }
 
   async function handleSubmit(e: React.FormEvent) {

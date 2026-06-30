@@ -1,6 +1,7 @@
 import os
 import tempfile
 import uuid
+from pathlib import Path
 from typing import Any
 
 from app.agents.ai_detection import AIDetectionAgent
@@ -18,7 +19,7 @@ class ReportIntakeAgent:
     def process(
         self,
         user_id: str,
-        photo_bytes: bytes,
+        photo_payloads: list[dict[str, Any]],
         latitude: float,
         longitude: float,
         description: str | None = None,
@@ -26,22 +27,36 @@ class ReportIntakeAgent:
         barangay: str | None = None,
         photo_url: str | None = None,
     ) -> dict[str, Any]:
-        if not photo_bytes and not photo_url:
+        if not photo_payloads and not photo_url:
             raise ValueError("Photo is required")
         if latitude is None or longitude is None:
             raise ValueError("GPS location is required")
 
-        local_path = None
-        if photo_bytes:
-            local_path = os.path.join(tempfile.gettempdir(), f"civx_{uuid.uuid4().hex}.jpg")
+        local_paths: list[str] = []
+        uploaded_photo_urls: list[str] = []
+        detection = None
+
+        for index, payload in enumerate(photo_payloads):
+            photo_bytes = payload.get("bytes") or b""
+            filename = payload.get("filename") or f"photo_{index + 1}.jpg"
+            if not photo_bytes:
+                continue
+
+            suffix = Path(str(filename)).suffix or ".jpg"
+            local_path = os.path.join(tempfile.gettempdir(), f"civx_{uuid.uuid4().hex}{suffix}")
             with open(local_path, "wb") as f:
                 f.write(photo_bytes)
+            local_paths.append(local_path)
 
-        detection = None
-        if local_path:
-            detection = self.ai.detect_image(local_path)
-            if not photo_url:
-                photo_url = self._upload_photo(local_path, user_id)
+            if index == 0:
+                detection = self.ai.detect_image(local_path)
+
+            uploaded_photo_urls.append(self._upload_photo(local_path, user_id, str(filename)))
+
+        if not photo_url and uploaded_photo_urls:
+            photo_url = uploaded_photo_urls[0]
+        if photo_url and not uploaded_photo_urls:
+            uploaded_photo_urls = [photo_url]
 
         final_issue = issue_type or (detection.issue_type if detection else "garbage_pile")
         ai_conf = detection.confidence if detection else 0.3
@@ -57,6 +72,7 @@ class ReportIntakeAgent:
             "longitude": longitude,
             "address_text": barangay,
             "photo_url": photo_url or "",
+            "photo_urls": uploaded_photo_urls,
             "ai_suggested_type": detection.issue_type if detection else final_issue,
             "ai_confidence": ai_conf,
             "ai_bounding_box": bbox,
@@ -77,8 +93,9 @@ class ReportIntakeAgent:
 
         self.triage.apply_triage(incident_id)
 
-        if local_path and os.path.exists(local_path):
-            os.remove(local_path)
+        for local_path in local_paths:
+            if os.path.exists(local_path):
+                os.remove(local_path)
 
         return {
             "report": report_row,
@@ -92,10 +109,11 @@ class ReportIntakeAgent:
             },
         }
 
-    def _upload_photo(self, local_path: str, user_id: str) -> str:
+    def _upload_photo(self, local_path: str, user_id: str, filename: str | None = None) -> str:
         sb = get_supabase()
         bucket = "report-photos"
-        key = f"{user_id}/{uuid.uuid4().hex}.jpg"
+        suffix = Path(filename).suffix if filename else ".jpg"
+        key = f"{user_id}/{uuid.uuid4().hex}{suffix or '.jpg'}"
         with open(local_path, "rb") as f:
             sb.storage.from_(bucket).upload(key, f.read(), {"content-type": "image/jpeg"})
         return sb.storage.from_(bucket).get_public_url(key)
