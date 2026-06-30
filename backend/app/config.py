@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     duplicate_merge_threshold: float = 0.75
     duplicate_radius_m: float = 25.0
     attendance_gps_radius_m: float = 100.0
+    demo_lgu_auto_role: bool = True
 
     @field_validator(
         "supabase_url",

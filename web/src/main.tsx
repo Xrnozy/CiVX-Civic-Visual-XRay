@@ -3,15 +3,17 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, useNavigate } from 'react-router-dom';
 import App from './App';
 import './styles/tokens.css';
-import { completeGoogleRedirectIfNeeded } from './lib/auth';
+import { completeGoogleRedirectIfNeeded, POST_AUTH_PATH, startAuthTokenSync } from './lib/auth';
 
 function Bootstrap() {
   const navigate = useNavigate();
 
   useEffect(() => {
+    const stopSync = startAuthTokenSync();
     completeGoogleRedirectIfNeeded().then((result) => {
-      if (result) navigate('/');
+      if (result) navigate(POST_AUTH_PATH);
     });
+    return stopSync;
   }, [navigate]);
 
   return <App />;

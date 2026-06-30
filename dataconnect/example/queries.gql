@@ -1,0 +1,31 @@
+query GetUserTasks($userId: UUID!) @auth(level: USER) {
+  tasks(where: {userId: {eq: $userId}}) {
+    id
+    title
+    status
+    dueDate
+    category {
+      name
+    }
+  }
+}
+
+mutation CreateTask($title: String!, $status: String!, $categoryId: UUID) @auth(level: USER) {
+  task_insert(data: {
+    title: $title,
+    status: $status,
+    categoryId: $categoryId,
+    userId_expr: "auth.uid"
+  })
+}
+
+mutation UpdateTaskStatus($id: UUID!, $status: String!) @auth(level: USER) {
+  task_update(key: {id: $id}, data: {status: $status})
+}
+
+mutation LogHabitCompletion($habitId: UUID!, $date: Date!) @auth(level: USER) {
+  habitLog_insert(data: {
+    habitId: $habitId,
+    completedDate: $date
+  })
+}

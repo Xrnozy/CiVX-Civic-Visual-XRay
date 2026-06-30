@@ -1,8 +1,11 @@
 import { usePolling } from '../../hooks/useDashboardSocket';
+import { useAuth } from '../../hooks/useAuth';
 
 export default function LGUAnalyticsPage() {
-  const summary = usePolling<{ by_barangay: Record<string, number>; by_status: Record<string, number> }>('/api/analytics/summary');
-  const volunteers = usePolling<Array<{ user_id: string; hours: number }>>('/api/analytics/volunteers/top');
+  const { user, ready } = useAuth();
+  const enabled = ready && !!user;
+  const summary = usePolling<{ by_barangay: Record<string, number>; by_status: Record<string, number> }>('/api/analytics/summary', 10000, enabled);
+  const volunteers = usePolling<Array<{ user_id: string; hours: number }>>('/api/analytics/volunteers/top', 10000, enabled);
 
   return (
     <div className="mx-auto max-w-[1440px] p-6">

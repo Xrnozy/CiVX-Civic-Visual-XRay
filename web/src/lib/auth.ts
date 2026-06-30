@@ -1,19 +1,41 @@
 import {
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
+  onAuthStateChanged,
   signInWithEmailAndPassword,
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
   updateProfile,
+  User,
   UserCredential,
 } from 'firebase/auth';
-import { getFirebaseAuth } from './firebase';
+import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
 import { api } from './api';
 
-export async function persistAuthSession(cred: UserCredential): Promise<void> {
-  const token = await cred.user.getIdToken(true);
+/** Where to send users after a successful sign-in. */
+export const POST_AUTH_PATH = '/lgu';
+
+/** Keep localStorage token in sync with the Firebase client session. */
+export async function syncAuthTokenFromFirebase(user: User | null): Promise<string | null> {
+  if (!user) {
+    localStorage.removeItem('civx_token');
+    return null;
+  }
+  const token = await user.getIdToken();
   localStorage.setItem('civx_token', token);
+  return token;
+}
+
+export function startAuthTokenSync(): () => void {
+  if (!isFirebaseConfigured) return () => {};
+  return onAuthStateChanged(getFirebaseAuth(), (user) => {
+    void syncAuthTokenFromFirebase(user);
+  });
+}
+
+export async function persistAuthSession(cred: UserCredential): Promise<void> {
+  await syncAuthTokenFromFirebase(cred.user);
   try {
     await api('/api/users/me');
   } catch (err) {
@@ -23,11 +45,15 @@ export async function persistAuthSession(cred: UserCredential): Promise<void> {
   }
 }
 
-/** Call on app load to complete Google redirect sign-in. */
+let redirectResultHandled = false;
+
+/** Completes Google redirect sign-in when popup fallback was used. */
 export async function completeGoogleRedirectIfNeeded(): Promise<UserCredential | null> {
+  if (redirectResultHandled) return null;
   try {
     const result = await getRedirectResult(getFirebaseAuth());
     if (!result) return null;
+    redirectResultHandled = true;
     await persistAuthSession(result);
     return result;
   } catch {
@@ -58,15 +84,36 @@ export async function registerWithEmail(
   return cred;
 }
 
+/** Popup sign-in with auth-state fallback when COOP blocks popup promise resolution. */
 export async function signInWithGoogle(): Promise<UserCredential> {
+  const auth = getFirebaseAuth();
   const provider = new GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
+  const priorUid = auth.currentUser?.uid ?? null;
+
+  const authStatePromise = new Promise<UserCredential>((resolve, reject) => {
+    const timeout = window.setTimeout(() => {
+      unsub();
+      reject(Object.assign(new Error('Google sign-in timed out'), { code: 'auth/popup-timeout' }));
+    }, 120_000);
+    const unsub = onAuthStateChanged(auth, (user) => {
+      if (user && user.uid !== priorUid) {
+        clearTimeout(timeout);
+        unsub();
+        resolve({ user } as UserCredential);
+      }
+    });
+  });
+
   try {
-    return await signInWithPopup(getFirebaseAuth(), provider);
+    return await Promise.race([signInWithPopup(auth, provider), authStatePromise]);
   } catch (err) {
+    if (auth.currentUser && auth.currentUser.uid !== priorUid) {
+      return { user: auth.currentUser } as UserCredential;
+    }
     const code = (err as { code?: string })?.code;
     if (code === 'auth/popup-blocked' || code === 'auth/cancelled-popup-request') {
-      await signInWithRedirect(getFirebaseAuth(), provider);
+      await signInWithRedirect(auth, provider);
       throw new GoogleRedirectStartedError();
     }
     throw err;

@@ -13,5 +13,20 @@ export default defineConfig({
       '@shared': path.resolve(__dirname, './src/shared'),
     },
   },
-  server: { port: 5173, proxy: { '/api': 'http://localhost:8000', '/ws': { target: 'ws://localhost:8000', ws: true } } },
+  server: {
+    port: 5173,
+    allowedHosts: ['civx.xrnozy.me'],
+    // Allow Firebase Google popup to communicate with the opener (Vite 6+ sets strict COOP by default).
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none',
+    },
+    proxy: { '/api': 'http://localhost:8000', '/ws': { target: 'ws://localhost:8000', ws: true } },
+  },
+  preview: {
+    headers: {
+      'Cross-Origin-Opener-Policy': 'same-origin-allow-popups',
+      'Cross-Origin-Embedder-Policy': 'unsafe-none',
+    },
+  },
 });

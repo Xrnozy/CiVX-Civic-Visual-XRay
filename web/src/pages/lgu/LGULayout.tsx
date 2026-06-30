@@ -1,6 +1,7 @@
-import { Link, Outlet } from 'react-router-dom';
+import { Link, Navigate, Outlet } from 'react-router-dom';
 import { GlobalNav } from '../../components/ui/GlobalNav';
 import { SubNavFrosted } from '../../components/ui/SubNavFrosted';
+import { useAuth } from '../../hooks/useAuth';
 
 const lguLinks = [
   { to: '/lgu', label: 'Overview' },
@@ -13,6 +14,20 @@ const lguLinks = [
 ];
 
 export function LGULayout() {
+  const { user, ready } = useAuth();
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas text-sm text-ink-muted-48">
+        Loading…
+      </div>
+    );
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
   return (
     <>
       <GlobalNav />

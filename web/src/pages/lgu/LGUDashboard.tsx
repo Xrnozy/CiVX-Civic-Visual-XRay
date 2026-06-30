@@ -1,9 +1,15 @@
 import { usePolling } from '../../hooks/useDashboardSocket';
+import { useAuth } from '../../hooks/useAuth';
 import { Footer } from '../../components/ui/Footer';
 import { StatCard } from '../../components/ui/StatCard';
 
 export default function LGUDashboard() {
-  const summary = usePolling<{ total_incidents: number; resolved_count: number; by_status: Record<string, number> }>('/api/analytics/summary');
+  const { user, ready } = useAuth();
+  const summary = usePolling<{ total_incidents: number; resolved_count: number; by_status: Record<string, number> }>(
+    '/api/analytics/summary',
+    10000,
+    ready && !!user,
+  );
 
   return (
     <div className="min-h-screen bg-canvas">

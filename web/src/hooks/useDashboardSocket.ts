@@ -16,13 +16,14 @@ export function useDashboardSocket(onUpdate: (data: unknown) => void) {
   }, [onUpdate]);
 }
 
-export function usePolling<T>(path: string, interval = 10000) {
+export function usePolling<T>(path: string, interval = 10000, enabled = true) {
   const [data, setData] = useState<T | null>(null);
   useEffect(() => {
+    if (!enabled) return;
     const load = () => api<T>(path).then(setData).catch(() => {});
     load();
     const id = setInterval(load, interval);
     return () => clearInterval(id);
-  }, [path, interval]);
+  }, [path, interval, enabled]);
   return data;
 }

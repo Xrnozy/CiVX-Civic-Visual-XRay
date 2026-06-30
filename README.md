@@ -77,6 +77,20 @@ VITE_FIREBASE_PROJECT_ID=civx-d53ad
 
 Restart `npm run dev` after changing env vars.
 
+### 2c. Google Maps
+
+Your Firebase project (`civx-d53ad`) is also a Google Cloud project. The map needs **Maps JavaScript API** enabled:
+
+1. Open [Maps JavaScript API](https://console.cloud.google.com/apis/library/maps-backend.googleapis.com) (select project **civx-d53ad**)
+2. Click **Enable** (billing must be enabled on the project, free tier is fine)
+3. Go to **APIs & Services → Credentials** → your browser API key
+4. Under **Application restrictions**, choose **HTTP referrers** and add:
+   - `http://localhost:5173/*`
+   - `https://civx.xrnozy.me/*` (for production)
+5. Put the key in `infra/.env` as `VITE_GOOGLE_MAPS_API_KEY`
+
+If you see `ApiNotActivatedMapError`, the API is not enabled yet. `ERR_BLOCKED_BY_CLIENT` is usually an ad blocker.
+
 ### 3. Backend
 
 ```bash

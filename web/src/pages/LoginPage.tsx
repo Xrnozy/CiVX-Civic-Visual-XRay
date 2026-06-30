@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { ButtonPrimary } from '../components/ui/Buttons';
 import { isFirebaseConfigured } from '../lib/firebase';
+import { useAuth } from '../hooks/useAuth';
 import {
   authErrorMessage,
   GoogleRedirectStartedError,
   persistAuthSession,
+  POST_AUTH_PATH,
   registerWithEmail,
   signInWithEmail,
   signInWithGoogle,
@@ -22,6 +24,11 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { user, ready } = useAuth();
+
+  useEffect(() => {
+    if (ready && user) navigate(POST_AUTH_PATH, { replace: true });
+  }, [ready, user, navigate]);
 
   async function completeAuth(cred: Awaited<ReturnType<typeof signInWithEmail>>) {
     try {
@@ -32,7 +39,7 @@ export default function LoginPage() {
       }
       throw sessionErr;
     }
-    navigate('/');
+    navigate(POST_AUTH_PATH);
   }
 
   async function handleSubmit(e: React.FormEvent) {

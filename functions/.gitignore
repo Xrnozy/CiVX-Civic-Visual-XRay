@@ -16,7 +16,13 @@ node_modules/
 # Secrets, credentials, and local key material
 *service-account*.json
 *firebase-service-account*.json
+*-adminsdk-*.json
+serviceAccountKey.json
+google-services.json
+GoogleService-Info.plist
 *google-application-credentials*.json
+client_secret*.json
+oauth-client*.json
 *credentials*.json
 *credential*.json
 *secret*.json
@@ -27,9 +33,20 @@ node_modules/
 *.p8
 *.p12
 *.crt
+*.cer
 *.csr
 *.jks
 *.keystore
+*.mobileprovision
+
+# Local databases, exports, and backups can contain user data or secrets
+*.db
+*.sqlite
+*.sqlite3
+*.dump
+*.backup
+*.bak
+*.sql.gz
 
 # Local-only overrides and logs
 *.local

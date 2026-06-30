@@ -55,19 +55,24 @@ async def get_current_user(
     result = sb.table("users").select("*").eq("firebase_uid", firebase_uid).limit(1).execute()
     if result.data:
         row = result.data[0]
+        role = row.get("role", "citizen")
+        if settings.demo_lgu_auto_role and role == "citizen":
+            sb.table("users").update({"role": "lgu_staff"}).eq("id", row["id"]).execute()
+            role = "lgu_staff"
         return AuthUser(
             id=row["id"],
             firebase_uid=firebase_uid,
             email=row.get("email") or email,
             full_name=row.get("full_name") or name,
-            role=row.get("role", "citizen"),
+            role=role,
         )
 
+    default_role = "lgu_staff" if settings.demo_lgu_auto_role else "citizen"
     insert = sb.table("users").insert({
         "firebase_uid": firebase_uid,
         "email": email,
         "full_name": name,
-        "role": "citizen",
+        "role": default_role,
     }).execute()
     row = insert.data[0]
     return AuthUser(
@@ -75,7 +80,7 @@ async def get_current_user(
         firebase_uid=firebase_uid,
         email=email,
         full_name=name,
-        role="citizen",
+        role=default_role,
     )
 
 

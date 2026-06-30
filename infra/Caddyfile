@@ -14,6 +14,7 @@ civx.xrnozy.me {
   }
 
   handle {
+    header Cross-Origin-Opener-Policy same-origin-allow-popups
     reverse_proxy localhost:5173
   }
 }

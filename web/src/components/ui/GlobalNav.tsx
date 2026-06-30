@@ -1,4 +1,5 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { signOutUser, useAuth } from '../../hooks/useAuth';
 
 const links = [
   { to: '/map', label: 'Map' },
@@ -10,6 +11,15 @@ const links = [
 
 export function GlobalNav() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, ready } = useAuth();
+
+  async function handleSignOut() {
+    await signOutUser();
+    navigate('/login');
+  }
+
+  const displayName = user?.displayName || user?.email?.split('@')[0] || 'Account';
 
   return (
     <nav className="sticky top-0 z-50 border-b border-white/10 bg-surface-black/95 backdrop-blur-md">
@@ -28,9 +38,22 @@ export function GlobalNav() {
             </Link>
           ))}
         </div>
-        <Link to="/login" className="btn-dark-utility">
-          Sign In
-        </Link>
+        {!ready ? (
+          <span className="btn-dark-utility opacity-40" aria-hidden>
+            ···
+          </span>
+        ) : user ? (
+          <div className="flex items-center gap-3">
+            <span className="hidden text-white/80 sm:inline">{displayName}</span>
+            <button type="button" onClick={handleSignOut} className="btn-dark-utility">
+              Sign Out
+            </button>
+          </div>
+        ) : (
+          <Link to="/login" className="btn-dark-utility">
+            Sign In
+          </Link>
+        )}
       </div>
     </nav>
   );
