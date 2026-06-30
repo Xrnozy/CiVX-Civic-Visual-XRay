@@ -1,0 +1,10 @@
+{
+  "name": "civx",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "dev:web": "cd web && npm run dev",
+    "dev:mobile": "cd mobile && npm start",
+    "install:all": "cd backend && pip install -r requirements.txt && cd ../web && npm install && cd ../mobile && npm install"
+  }
+}

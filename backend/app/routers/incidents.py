@@ -1,0 +1,100 @@
+from fastapi import APIRouter, Depends, HTTPException, Query
+
+from app.auth.firebase import AuthUser, get_current_user, require_roles, get_optional_user
+from app.db import get_supabase
+from app.models.schemas import IncidentUpdate
+from app.utils.audit import log_audit, sanitize_incident_public, sanitize_incident_lgu
+from app.agents.lgu_triage import LGUTriageAgent
+
+router = APIRouter(prefix="/api/incidents", tags=["incidents"])
+LGU = ("lgu_admin", "lgu_staff", "field_worker")
+
+
+@router.get("/public")
+def list_public_incidents(status: str | None = None, issue_type: str | None = None):
+    sb = get_supabase()
+    q = sb.table("incidents").select("*")
+    if status:
+        q = q.eq("status", status)
+    else:
+        q = q.in_("status", ["verified", "assigned", "ongoing", "resolved"])
+    if issue_type:
+        q = q.eq("primary_issue_type", issue_type)
+    data = q.order("created_at", desc=True).limit(500).execute().data or []
+    return [sanitize_incident_public(r) for r in data]
+
+
+@router.get("")
+def list_incidents(user: AuthUser = Depends(require_roles(*LGU))):
+    sb = get_supabase()
+    data = sb.table("incidents").select("*").order("triage_priority", desc=True).limit(200).execute().data or []
+    return [sanitize_incident_lgu(r) for r in data]
+
+
+@router.get("/{incident_id}")
+def get_incident(incident_id: str, user: AuthUser | None = Depends(get_optional_user)):
+    sb = get_supabase()
+    row = sb.table("incidents").select("*").eq("id", incident_id).single().execute().data
+    if user and user.role in LGU:
+        return sanitize_incident_lgu(row)
+    return sanitize_incident_public(row)
+
+
+@router.patch("/{incident_id}")
+def update_incident(
+    incident_id: str,
+    body: IncidentUpdate,
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    sb = get_supabase()
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if "status" in updates and updates["status"] == "verified":
+        updates["verified_at"] = "now()"
+    if "status" in updates and updates["status"] == "resolved":
+        updates["resolved_at"] = "now()"
+    sb.table("incidents").update(updates).eq("id", incident_id).execute()
+    log_audit(user.id, "update_incident", "incident", incident_id, updates)
+    return sb.table("incidents").select("*").eq("id", incident_id).single().execute().data
+
+
+@router.post("/{incident_id}/verify")
+def verify_incident(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+    sb = get_supabase()
+    sb.table("incidents").update({"status": "verified"}).eq("id", incident_id).execute()
+    log_audit(user.id, "verify", "incident", incident_id, {})
+    return {"status": "verified"}
+
+
+@router.post("/{incident_id}/reject")
+def reject_incident(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+    sb = get_supabase()
+    sb.table("incidents").update({"status": "archived"}).eq("id", incident_id).execute()
+    log_audit(user.id, "reject", "incident", incident_id, {})
+    return {"status": "archived"}
+
+
+@router.post("/{incident_id}/assign")
+def assign_department(
+    incident_id: str,
+    department_id: str = Query(...),
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    sb = get_supabase()
+    sb.table("incidents").update({
+        "assigned_department_id": department_id,
+        "status": "assigned",
+    }).eq("id", incident_id).execute()
+    sb.table("department_assignments").insert({
+        "incident_id": incident_id,
+        "department_id": department_id,
+        "assigned_by_user_id": user.id,
+        "status": "assigned",
+    }).execute()
+    log_audit(user.id, "assign", "incident", incident_id, {"department_id": department_id})
+    return {"status": "assigned"}
+
+
+@router.post("/{incident_id}/triage")
+def retriage(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+    agent = LGUTriageAgent()
+    return agent.apply_triage(incident_id)

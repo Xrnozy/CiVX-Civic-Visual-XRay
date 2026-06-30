@@ -1,1 +1,13 @@
 model/
+venv/
+.env
+__pycache__/
+*.pyc
+node_modules/
+dist/
+.expo/
+web/dist/
+backend/venv/
+*.pt
+.firebase/
+infra/firebase-service-account.json

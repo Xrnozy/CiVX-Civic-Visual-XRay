@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "CiVX",
+    "slug": "civx",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "civx",
+    "userInterfaceStyle": "light",
+    "plugins": [
+      "expo-router",
+      ["expo-camera", { "cameraPermission": "Allow CiVX to take photos for civic reports." }],
+      ["expo-location", { "locationPermission": "Allow CiVX to attach GPS to reports and validate attendance." }]
+    ]
+  }
+}

@@ -1,0 +1,96 @@
+import os
+from dataclasses import dataclass
+
+import firebase_admin
+from firebase_admin import auth, credentials
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from app.config import settings
+from app.db import get_supabase
+
+security = HTTPBearer(auto_error=False)
+
+_firebase_initialized = False
+
+
+def init_firebase() -> None:
+    global _firebase_initialized
+    if _firebase_initialized:
+        return
+    cred_path = settings.google_application_credentials
+    if cred_path and os.path.exists(cred_path):
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+    elif settings.firebase_project_id:
+        firebase_admin.initialize_app(options={"projectId": settings.firebase_project_id})
+    _firebase_initialized = True
+
+
+@dataclass
+class AuthUser:
+    id: str
+    firebase_uid: str
+    email: str | None
+    full_name: str
+    role: str
+
+
+async def get_current_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(security),
+) -> AuthUser:
+    if not creds:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token")
+    init_firebase()
+    try:
+        decoded = auth.verify_id_token(creds.credentials)
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+
+    firebase_uid = decoded["uid"]
+    email = decoded.get("email")
+    name = decoded.get("name") or email or "CiVX User"
+
+    sb = get_supabase()
+    result = sb.table("users").select("*").eq("firebase_uid", firebase_uid).limit(1).execute()
+    if result.data:
+        row = result.data[0]
+        return AuthUser(
+            id=row["id"],
+            firebase_uid=firebase_uid,
+            email=row.get("email") or email,
+            full_name=row.get("full_name") or name,
+            role=row.get("role", "citizen"),
+        )
+
+    insert = sb.table("users").insert({
+        "firebase_uid": firebase_uid,
+        "email": email,
+        "full_name": name,
+        "role": "citizen",
+    }).execute()
+    row = insert.data[0]
+    return AuthUser(
+        id=row["id"],
+        firebase_uid=firebase_uid,
+        email=email,
+        full_name=name,
+        role="citizen",
+    )
+
+
+def require_roles(*roles: str):
+    async def checker(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+        if user.role not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+        return user
+
+    return checker
+
+
+async def get_optional_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(security),
+) -> AuthUser | None:
+    if not creds:
+        return None
+    return await get_current_user(creds)

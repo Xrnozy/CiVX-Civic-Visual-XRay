@@ -1,0 +1,19 @@
+civx.xrnozy.me {
+  encode gzip
+
+  handle /api/* {
+    reverse_proxy localhost:8000
+  }
+
+  handle /ws/* {
+    reverse_proxy localhost:8000
+  }
+
+  handle /health {
+    reverse_proxy localhost:8000
+  }
+
+  handle {
+    reverse_proxy localhost:5173
+  }
+}
