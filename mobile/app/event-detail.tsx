@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
-import { BarCodeScanner } from 'expo-barcode-scanner';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { api } from '../lib/api';
 
 export default function EventDetailScreen() {
+  const [permission, requestPermission] = useCameraPermissions();
   const [scanning, setScanning] = useState(true);
 
   async function onScan({ data }: { data: string }) {
@@ -26,11 +27,25 @@ export default function EventDetailScreen() {
     }
   }
 
+  if (!permission?.granted) {
+    return (
+      <View style={styles.center}>
+        <TouchableOpacity onPress={requestPermission}>
+          <Text>Grant camera permission to scan QR codes</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (!scanning) return <View style={styles.center}><Text>Scan complete</Text></View>;
 
   return (
     <View style={styles.flex}>
-      <BarCodeScanner onBarCodeScanned={onScan} style={styles.flex} />
+      <CameraView
+        style={styles.flex}
+        onBarcodeScanned={onScan}
+        barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
+      />
       <Text style={styles.hint}>Scan event QR code to check in</Text>
     </View>
   );
