@@ -1,7 +1,7 @@
 import uuid
 from fastapi import APIRouter, Depends
 
-from app.auth.firebase import AuthUser, get_current_user, require_roles
+from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
 from app.db import get_supabase
 from app.models.schemas import CleanupEventCreate
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
@@ -9,19 +9,26 @@ from app.utils.audit import log_audit
 
 router = APIRouter(prefix="/api/cleanup-events", tags=["cleanup"])
 LGU = ("lgu_admin", "lgu_staff")
+ORGANIZER_AND_LGU = ("organizer", "lgu_admin", "lgu_staff")
 
 
 @router.get("")
-def list_events(approved_only: bool = False):
+def list_events(
+    approved_only: bool = False,
+    mine: bool = False,
+    user: AuthUser | None = Depends(get_optional_user),
+):
     sb = get_supabase()
     q = sb.table("cleanup_events").select("*")
     if approved_only:
         q = q.eq("approval_status", "approved")
+    if mine and user:
+        q = q.eq("organizer_user_id", user.id)
     return q.order("scheduled_start", desc=True).limit(100).execute().data
 
 
 @router.post("")
-def create_event(body: CleanupEventCreate, user: AuthUser = Depends(get_current_user)):
+def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_roles(*ORGANIZER_AND_LGU))):
     sb = get_supabase()
     qr = str(uuid.uuid4())
     row = sb.table("cleanup_events").insert({

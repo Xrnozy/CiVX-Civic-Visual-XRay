@@ -56,3 +56,20 @@ export type IssueCategory = (typeof ISSUE_CATEGORIES)[number];
 export type IncidentStatus = (typeof INCIDENT_STATUSES)[number];
 export type EcoQuestTaskType = (typeof ECOQUEST_TASK_TYPES)[number];
 export type EcoQuestStatus = (typeof ECOQUEST_STATUSES)[number];
+
+export const ACCOUNT_TYPE_LABELS = {
+  citizen: 'Community member',
+  organizer: 'Community leader (NGO)',
+  street_sweeper: 'Public Workers',
+} as const;
+
+export const PUBLIC_WORKER_TYPE_LABELS = {
+  street_sweeper: 'Street sweeper',
+  garbage_collector: 'Garbage collector',
+  public_driver: 'Public driver',
+  barangay_worker: 'Barangay worker',
+  lgu_vehicle_operator: 'LGU vehicle operator',
+  patrol: 'Patrol / security',
+} as const;
+
+export const REGISTRATION_INVITE_STATUSES = ['active', 'used', 'expired', 'revoked'] as const;

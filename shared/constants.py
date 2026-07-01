@@ -74,6 +74,28 @@ ECOQUEST_TASK_TYPES = [
     "assist_cleanup_drive",
 ]
 
+REGISTRATION_INVITE_STATUSES = [
+    "active",
+    "used",
+    "expired",
+    "revoked",
+]
+
+ACCOUNT_TYPES = {
+    "citizen": "Community member",
+    "organizer": "Community leader (NGO)",
+    "street_sweeper": "Public Workers",
+}
+
+PUBLIC_WORKER_TYPES = {
+    "street_sweeper": "Street sweeper",
+    "garbage_collector": "Garbage collector",
+    "public_driver": "Public driver",
+    "barangay_worker": "Barangay worker",
+    "lgu_vehicle_operator": "LGU vehicle operator",
+    "patrol": "Patrol / security",
+}
+
 ECOQUEST_STATUSES = [
     "open",
     "in_progress",

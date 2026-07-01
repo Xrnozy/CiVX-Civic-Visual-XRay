@@ -90,3 +90,58 @@ class UserProfileUpdate(BaseModel):
     full_name: str | None = None
     phone_number: str | None = None
     barangay: str | None = None
+    organization_name: str | None = None
+
+
+class CompleteRegistration(BaseModel):
+    account_type: str  # citizen | organizer | street_sweeper
+    full_name: str
+    phone_number: str
+    barangay: str
+    organization_name: str | None = None
+    invite_token: str | None = None
+    public_worker_type: str | None = None
+
+
+class RegistrationInviteCreate(BaseModel):
+    label: str | None = None
+    barangay: str | None = None
+    expires_in_days: int = Field(default=7, ge=1, le=90)
+
+
+class SetUserRole(BaseModel):
+    role: str
+
+
+class PassiveWorkerSummary(BaseModel):
+    total_sessions: int
+    total_chunks: int
+    total_detections: int
+    active_session_id: str | None = None
+
+
+class PassiveSessionListItem(BaseModel):
+    id: str
+    mode: str
+    started_at: str
+    ended_at: str | None = None
+    route_status: str
+    total_chunks: int
+
+
+class PassiveSessionDetail(PassiveSessionListItem):
+    device_id: str | None = None
+    chunks_completed: int = 0
+    chunks_pending: int = 0
+    chunks_failed: int = 0
+
+
+class PassiveDetectionItem(BaseModel):
+    id: str
+    detected_issue_type: str
+    confidence: float
+    severity_score: float | None = None
+    matched_latitude: float | None = None
+    matched_longitude: float | None = None
+    created_at: str
+    session_id: str

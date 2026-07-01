@@ -1,25 +1,30 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { signOutUser, useAuth } from '../../hooks/useAuth';
+import { useProfile } from '../../hooks/useProfile';
 
-const links = [
+const publicLinks = [
   { to: '/map', label: 'Map' },
   { to: '/events', label: 'Events' },
   { to: '/gallery', label: 'Gallery' },
   { to: '/transparency', label: 'Transparency' },
-  { to: '/lgu', label: 'LGU' },
 ];
 
 export function GlobalNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, ready } = useAuth();
+  const { profile, ready: profileReady } = useProfile();
 
   async function handleSignOut() {
     await signOutUser();
     navigate('/login');
   }
 
-  const displayName = user?.displayName || user?.email?.split('@')[0] || 'Account';
+  const displayName = profile?.full_name || user?.displayName || user?.email?.split('@')[0] || 'Account';
+  const isLgu = profile && ['lgu_admin', 'lgu_staff', 'field_worker'].includes(profile.role);
+  const isOrganizer = profile?.role === 'organizer';
+  const isWorker = profile?.role === 'street_sweeper';
+  const roleLinksReady = !user || profileReady;
 
   return (
     <nav className="sticky top-0 z-50 border-b border-white/10 bg-surface-black/95 backdrop-blur-md">
@@ -28,7 +33,7 @@ export function GlobalNav() {
           CiVX
         </Link>
         <div className="hidden gap-6 md:flex">
-          {links.map((l) => (
+          {publicLinks.map((l) => (
             <Link
               key={l.to}
               to={l.to}
@@ -37,6 +42,21 @@ export function GlobalNav() {
               {l.label}
             </Link>
           ))}
+          {roleLinksReady && isOrganizer && (
+            <Link to="/organizer" className={location.pathname.startsWith('/organizer') ? 'text-white' : 'text-white/70'}>
+              Organizer
+            </Link>
+          )}
+          {roleLinksReady && isWorker && (
+            <Link to="/worker" className={location.pathname.startsWith('/worker') ? 'text-white' : 'text-white/70'}>
+              Public Workers
+            </Link>
+          )}
+          {roleLinksReady && isLgu && (
+            <Link to="/lgu" className={location.pathname.startsWith('/lgu') ? 'text-white' : 'text-white/70'}>
+              LGU
+            </Link>
+          )}
         </div>
         {!ready ? (
           <span className="btn-dark-utility opacity-40" aria-hidden>
@@ -50,9 +70,14 @@ export function GlobalNav() {
             </button>
           </div>
         ) : (
-          <Link to="/login" className="btn-dark-utility">
-            Sign In
-          </Link>
+          <div className="flex gap-2">
+            <Link to="/register" className="btn-dark-utility">
+              Register
+            </Link>
+            <Link to="/login" className="btn-dark-utility">
+              Sign In
+            </Link>
+          </div>
         )}
       </div>
     </nav>

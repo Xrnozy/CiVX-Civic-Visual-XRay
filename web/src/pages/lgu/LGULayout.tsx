@@ -1,20 +1,25 @@
 import { Link, Navigate, Outlet } from 'react-router-dom';
 import { GlobalNav } from '../../components/ui/GlobalNav';
 import { SubNavFrosted } from '../../components/ui/SubNavFrosted';
-import { useAuth } from '../../hooks/useAuth';
+import { useProfile } from '../../hooks/useProfile';
 
-const lguLinks = [
+const baseLguLinks = [
   { to: '/lgu', label: 'Overview' },
   { to: '/lgu/queue', label: 'Queue' },
   { to: '/lgu/map', label: 'Map' },
   { to: '/lgu/cleanup', label: 'Cleanup' },
+  { to: '/lgu/worker-invites', label: 'Worker QR' },
   { to: '/lgu/attendance', label: 'Attendance' },
   { to: '/lgu/ecoquest', label: 'EcoQuest' },
   { to: '/lgu/analytics', label: 'Analytics' },
 ];
 
+const adminOnlyLinks = [{ to: '/lgu/staff', label: 'Staff access' }];
+
+const LGU_ROLES = new Set(['lgu_admin', 'lgu_staff', 'field_worker']);
+
 export function LGULayout() {
-  const { user, ready } = useAuth();
+  const { profile, ready } = useProfile();
 
   if (!ready) {
     return (
@@ -24,9 +29,11 @@ export function LGULayout() {
     );
   }
 
-  if (!user) {
+  if (!profile || !LGU_ROLES.has(profile.role)) {
     return <Navigate to="/login" replace />;
   }
+
+  const lguLinks = profile.role === 'lgu_admin' ? [...baseLguLinks, ...adminOnlyLinks] : baseLguLinks;
 
   return (
     <>

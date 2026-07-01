@@ -8,7 +8,7 @@ from app.config import settings
 from app.routers import (
     health, users, reports, incidents, cleanup, volunteers,
     attendance, ecoquest, passive, driver, maps, analytics, media, ws,
-    departments,
+    departments, registration_invites,
 )
 
 limiter = Limiter(key_func=get_remote_address)
@@ -27,6 +27,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(users.router)
+app.include_router(registration_invites.router)
 app.include_router(reports.router)
 app.include_router(incidents.router)
 app.include_router(departments.router)

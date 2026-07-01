@@ -12,9 +12,50 @@ import {
 } from 'firebase/auth';
 import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
 import { api } from './api';
+import type { AccountType, UserProfile } from '../types/user';
 
-/** Where to send users after a successful sign-in. */
-export const POST_AUTH_PATH = '/lgu';
+export function redirectPathForRole(role: string): string {
+  switch (role) {
+    case 'organizer':
+      return '/organizer';
+    case 'street_sweeper':
+      return '/worker';
+    case 'lgu_admin':
+    case 'lgu_staff':
+    case 'field_worker':
+      return '/lgu';
+    default:
+      return '/map';
+  }
+}
+
+export function isRegistrationComplete(
+  profile: Pick<UserProfile, 'registration_completed' | 'registration_completed_at'> | null | undefined,
+): boolean {
+  if (!profile) return false;
+  return !!(profile.registration_completed || profile.registration_completed_at);
+}
+
+export interface CompleteRegistrationPayload {
+  account_type: AccountType;
+  full_name: string;
+  phone_number: string;
+  barangay: string;
+  organization_name?: string;
+  invite_token?: string;
+  public_worker_type?: string;
+}
+
+export async function completeRegistration(payload: CompleteRegistrationPayload): Promise<UserProfile> {
+  return api<UserProfile>('/api/users/complete-registration', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchProfileAfterAuth(): Promise<UserProfile> {
+  return api<UserProfile>('/api/users/me');
+}
 
 /** Keep localStorage token in sync with the Firebase client session. */
 export async function syncAuthTokenFromFirebase(user: User | null): Promise<string | null> {
@@ -34,28 +75,21 @@ export function startAuthTokenSync(): () => void {
   });
 }
 
-export async function persistAuthSession(cred: UserCredential): Promise<void> {
+export async function persistAuthSession(cred: UserCredential): Promise<UserProfile> {
   await syncAuthTokenFromFirebase(cred.user);
-  try {
-    await api('/api/users/me');
-  } catch (err) {
-    if (import.meta.env.DEV) {
-      console.warn('[auth] /api/users/me sync failed; login still succeeded', err);
-    }
-  }
+  return fetchProfileAfterAuth();
 }
 
 let redirectResultHandled = false;
 
 /** Completes Google redirect sign-in when popup fallback was used. */
-export async function completeGoogleRedirectIfNeeded(): Promise<UserCredential | null> {
+export async function completeGoogleRedirectIfNeeded(): Promise<UserProfile | null> {
   if (redirectResultHandled) return null;
   try {
     const result = await getRedirectResult(getFirebaseAuth());
     if (!result) return null;
     redirectResultHandled = true;
-    await persistAuthSession(result);
-    return result;
+    return await persistAuthSession(result);
   } catch {
     return null;
   }

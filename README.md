@@ -59,7 +59,62 @@ Run `supabase/migrations/001_initial_schema.sql` in your Supabase SQL editor.
 
 Create storage buckets: `report-photos`, `video-chunks`.
 
-### 2b. Firebase Authentication (email + Google)
+Under **API restrictions**, allow at least **Identity Toolkit API** (and Firebase-related APIs). Wait up to 5 minutes after saving.
+
+### 2b. Roles and registration
+
+Run `supabase/migrations/002_registration_invites.sql` in Supabase after the initial schema.
+
+Set in `infra/.env`:
+
+```
+DEMO_LGU_AUTO_ROLE=false
+PUBLIC_WEB_URL=http://localhost:5173
+```
+
+**Account types at `/register`:**
+
+| Type | Role | How |
+|------|------|-----|
+| Community member | `citizen` | Self-register with phone + barangay |
+| Community leader (NGO) | `organizer` | Self-register with organization name; create cleanup drives at `/organizer` |
+| Public Workers | `street_sweeper` | LGU issues QR at `/lgu/worker-invites`; worker scans link with `?invite=TOKEN` |
+
+There is no self-register path for LGU staff. Promote accounts manually:
+
+**Option A — Supabase (first LGU admin, one-time bootstrap)**
+
+1. Register normally at `/register` (Community member is fine).
+2. In [Supabase](https://supabase.com/dashboard) → **SQL Editor**, run (use your sign-in email):
+
+```sql
+UPDATE users
+SET role = 'lgu_admin', registration_completed_at = COALESCE(registration_completed_at, now())
+WHERE email = 'you@example.com';
+```
+
+3. Sign out and sign back in. You should see **LGU** in the nav and access `/lgu`.
+
+**Option B — LGU dashboard (after you are `lgu_admin`)**
+
+1. Open **LGU → Staff access** (`/lgu/staff`).
+2. Search the person’s **email** (they must have registered at `/register` first).
+3. Set their role to **LGU staff** or **Field worker**.
+4. Ask them to sign out and sign back in.
+
+**Option C — API** (for scripts or integrations)
+
+```http
+POST /api/users/{user_uuid}/role
+Authorization: Bearer <firebase-id-token>
+Content-Type: application/json
+
+{"role": "lgu_staff"}
+```
+
+Only an existing `lgu_admin` can call this.
+
+### 2c. Firebase Authentication (email + Google)
 
 In [Firebase Console](https://console.firebase.google.com/) → your project → **Authentication** → **Sign-in method**:
 
@@ -77,7 +132,7 @@ VITE_FIREBASE_PROJECT_ID=civx-d53ad
 
 Restart `npm run dev` after changing env vars.
 
-### 2c. Google Maps
+### 2d. Google Maps
 
 Your Firebase project (`civx-d53ad`) is also a Google Cloud project. The map needs **Maps JavaScript API** enabled:
 

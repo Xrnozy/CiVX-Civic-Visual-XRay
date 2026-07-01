@@ -38,7 +38,8 @@ class Settings(BaseSettings):
     duplicate_merge_threshold: float = 0.75
     duplicate_radius_m: float = 25.0
     attendance_gps_radius_m: float = 100.0
-    demo_lgu_auto_role: bool = True
+    demo_lgu_auto_role: bool = False
+    public_web_url: str = "http://localhost:5173"
     google_maps_api_key: str = ""
 
     @field_validator(
@@ -47,6 +48,7 @@ class Settings(BaseSettings):
         "firebase_project_id",
         "google_application_credentials",
         "cors_origins",
+        "public_web_url",
         mode="before",
     )
     @classmethod

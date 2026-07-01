@@ -11,3 +11,9 @@ export function ButtonSecondaryPill({ children, className = '', ...props }: Butt
     <button className={`btn-secondary-pill ${className}`} {...props}>{children}</button>
   );
 }
+
+export function ButtonDark({ children, className = '', ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button className={`btn-dark-utility ${className}`} {...props}>{children}</button>
+  );
+}

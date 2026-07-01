@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -34,6 +35,7 @@ class AuthUser:
     email: str | None
     full_name: str
     role: str
+    registration_completed: bool = False
 
 
 async def get_current_user(
@@ -65,6 +67,7 @@ async def get_current_user(
             email=row.get("email") or email,
             full_name=row.get("full_name") or name,
             role=role,
+            registration_completed=bool(row.get("registration_completed_at")),
         )
 
     default_role = "lgu_staff" if settings.demo_lgu_auto_role else "citizen"
@@ -81,6 +84,7 @@ async def get_current_user(
         email=email,
         full_name=name,
         role=default_role,
+        registration_completed=False,
     )
 
 
@@ -91,6 +95,12 @@ def require_roles(*roles: str):
         return user
 
     return checker
+
+
+def require_registration_complete(user: AuthUser = Depends(get_current_user)) -> AuthUser:
+    if not user.registration_completed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Registration not completed")
+    return user
 
 
 async def get_optional_user(

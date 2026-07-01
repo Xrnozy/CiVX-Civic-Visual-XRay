@@ -62,7 +62,12 @@ a {
 }
 
 .btn-dark-utility {
-  @apply inline-flex items-center justify-center rounded-sm bg-ink px-[15px] py-2 text-sm text-white transition active:scale-95;
+  @apply inline-flex items-center justify-center rounded-full bg-ink px-[22px] py-[11px] text-[17px] font-medium text-white transition active:scale-95;
+}
+
+.btn-dark-utility:focus-visible {
+  outline: 2px solid var(--color-ink-muted-80);
+  outline-offset: 2px;
 }
 
 /* Product tiles — full viewport Apple rhythm */
@@ -218,4 +223,166 @@ a {
 
 .product-tile-dark .eyebrow {
   color: var(--color-primary-on-dark);
+}
+
+/* Registration */
+.auth-card-wide {
+  @apply mx-auto w-full max-w-xl rounded-[22px] border border-hairline bg-canvas p-8 md:p-10;
+  box-shadow: var(--shadow-product);
+}
+
+.register-steps {
+  @apply mb-8 flex items-center gap-2;
+}
+
+.register-step {
+  @apply flex flex-1 flex-col gap-1;
+}
+
+.register-step-bar {
+  @apply h-1 rounded-full bg-hairline;
+}
+
+.register-step-bar-active {
+  background: var(--color-primary);
+}
+
+.register-step-label {
+  @apply text-[11px] font-medium text-ink-muted-48;
+}
+
+.register-step-label-active {
+  @apply text-primary;
+}
+
+.account-type-card {
+  @apply w-full rounded-[18px] border border-hairline bg-canvas p-5 text-left transition;
+}
+
+.account-type-card:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 35%, var(--color-hairline));
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--color-primary) 8%, transparent);
+}
+
+.account-type-card-worker {
+  @apply rounded-[18px] border border-hairline bg-gradient-to-b from-canvas to-canvas-parchment p-5;
+}
+
+.account-type-icon {
+  @apply mb-3 flex h-11 w-11 items-center justify-center rounded-full text-lg;
+}
+
+.account-type-icon-citizen {
+  background: color-mix(in oklab, var(--color-primary) 12%, white);
+}
+
+.account-type-icon-organizer {
+  background: color-mix(in oklab, #7c3aed 12%, white);
+}
+
+.account-type-icon-worker {
+  background: color-mix(in oklab, #059669 12%, white);
+}
+
+/* Invite QR capture */
+.invite-qr-capture {
+  @apply mt-4;
+}
+
+.invite-qr-tabs {
+  @apply grid grid-cols-3 gap-2 rounded-[14px] border border-hairline bg-canvas-parchment p-1;
+}
+
+.invite-qr-tab {
+  @apply flex flex-col items-center rounded-[10px] px-2 py-2.5 text-xs text-ink-muted-48 transition;
+}
+
+.invite-qr-tab-active {
+  @apply bg-canvas text-ink shadow-sm;
+  box-shadow: var(--shadow-product);
+}
+
+.invite-qr-scan-shell {
+  @apply mt-4;
+}
+
+.invite-qr-viewport {
+  @apply min-h-[240px] border border-hairline bg-black/5;
+}
+
+.invite-qr-viewport video {
+  border-radius: 14px;
+}
+
+.invite-qr-upload-shell {
+  @apply mt-4;
+}
+
+.invite-qr-dropzone {
+  @apply flex w-full flex-col items-center justify-center gap-2 rounded-[18px] border-2 border-dashed border-hairline bg-canvas px-6 py-10 text-center transition;
+}
+
+.invite-qr-dropzone:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: color-mix(in oklab, var(--color-primary) 4%, var(--color-canvas));
+}
+
+.invite-qr-dropzone-icon {
+  @apply flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl text-white;
+}
+
+.invite-qr-token-preview {
+  @apply mt-4 rounded-[14px] border border-hairline bg-canvas-parchment px-4 py-3;
+}
+
+/* LGU staff management */
+.staff-page-header {
+  @apply border-b border-hairline bg-canvas-parchment px-6 py-10;
+}
+
+.staff-role-badge {
+  @apply inline-flex rounded-full px-3 py-1 text-xs font-semibold;
+}
+
+.staff-role-badge-admin {
+  @apply bg-violet-100 text-violet-800;
+}
+
+.staff-role-badge-staff {
+  @apply bg-sky-100 text-sky-800;
+}
+
+.staff-role-badge-field {
+  @apply bg-emerald-100 text-emerald-800;
+}
+
+.staff-role-badge-other {
+  @apply bg-gray-100 text-gray-700;
+}
+
+.staff-user-avatar {
+  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white;
+}
+
+.staff-search-card {
+  @apply rounded-[18px] border border-hairline bg-canvas p-6;
+  box-shadow: var(--shadow-product);
+}
+
+.staff-team-card {
+  @apply overflow-hidden rounded-[18px] border border-hairline bg-canvas;
+  box-shadow: var(--shadow-product);
+}
+
+.staff-team-row {
+  @apply flex flex-col gap-4 border-b border-hairline/70 p-5 last:border-b-0 md:flex-row md:items-center md:justify-between;
+}
+
+.staff-select {
+  @apply rounded-full border border-hairline bg-canvas px-4 py-2.5 text-sm outline-none transition;
+  min-height: 40px;
+}
+
+.staff-select:focus {
+  border-color: var(--color-primary);
 }

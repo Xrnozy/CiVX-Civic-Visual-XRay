@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { ButtonPrimary, ButtonSecondaryPill } from '../../components/ui/Buttons';
 import { api } from '../../lib/api';
-import { DEFAULT_MAP_CENTER, ECOQUEST_TASK_TYPES } from '../../shared/constants';
+import { DEFAULT_MAP_CENTER, ECOQUEST_TASK_TYPES, type EcoQuestTaskType } from '../../shared/constants';
 
 interface RequiredProof {
   gps?: boolean;
@@ -98,7 +98,19 @@ export default function LGUEcoQuestPage() {
   const [showForm, setShowForm] = useState(false);
   const [tab, setTab] = useState<'tasks' | 'review'>('tasks');
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    title: string;
+    description: string;
+    task_type: EcoQuestTaskType;
+    barangay: string;
+    latitude: number;
+    longitude: number;
+    reward_type: string;
+    requireGps: boolean;
+    requireBefore: boolean;
+    requireAfter: boolean;
+    requireQr: boolean;
+  }>({
     title: '',
     description: '',
     task_type: ECOQUEST_TASK_TYPES[0],
@@ -229,7 +241,7 @@ export default function LGUEcoQuestPage() {
               Task type
               <select
                 value={form.task_type}
-                onChange={(e) => setForm({ ...form, task_type: e.target.value })}
+                onChange={(e) => setForm({ ...form, task_type: e.target.value as EcoQuestTaskType })}
                 className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
               >
                 {ECOQUEST_TASK_TYPES.map((t) => (
