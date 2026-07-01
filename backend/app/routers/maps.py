@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends
 from app.auth.firebase import AuthUser, require_roles
 from app.db import get_supabase
 from app.utils.audit import normalize_submitter_type
+from app.utils.storage import resolve_photo_url
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
 LGU = ("lgu_admin", "lgu_staff", "field_worker")
@@ -19,6 +20,14 @@ def map_markers(issue_type: str | None = None, status: str | None = None, lgu: b
     elif not lgu:
         q = q.in_("status", ["verified", "assigned", "ongoing", "resolved"])
     incidents = q.limit(500).execute().data or []
+
+    incidents = [
+        incident
+        for incident in incidents
+        if incident.get("latitude") is not None
+        and incident.get("longitude") is not None
+        and incident.get("primary_issue_type")
+    ]
 
     preview_by_incident_id: dict[str, dict] = {}
     incident_ids = [incident["id"] for incident in incidents if incident.get("id")]
@@ -39,7 +48,7 @@ def map_markers(issue_type: str | None = None, status: str | None = None, lgu: b
             all_urls = report.get("photo_urls")
             first_gallery_url = all_urls[0] if isinstance(all_urls, list) and all_urls else None
             preview_by_incident_id[incident_id] = {
-                "preview_photo_url": first_gallery_url or report.get("photo_url"),
+                "preview_photo_url": resolve_photo_url(first_gallery_url or report.get("photo_url")),
                 "preview_description": report.get("description"),
                 "preview_ai_suggested_type": report.get("ai_suggested_type"),
                 "preview_ai_confidence": report.get("ai_confidence"),

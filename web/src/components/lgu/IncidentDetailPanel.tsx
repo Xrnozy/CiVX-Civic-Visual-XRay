@@ -28,6 +28,7 @@ interface Report {
   issue_type: string;
   description?: string;
   photo_url: string;
+  address_text?: string;
   ai_suggested_type?: string;
   ai_confidence?: number;
   ai_severity_score?: number;
@@ -78,6 +79,8 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
   const avgConfidence = reports.length
     ? reports.reduce((sum, r) => sum + (r.ai_confidence ?? 0), 0) / reports.length
     : null;
+  const submittedBarangay = reports.find((r) => r.address_text?.trim())?.address_text?.trim();
+  const displayBarangay = incident.barangay ?? submittedBarangay ?? 'Unknown';
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -145,7 +148,7 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
         </div>
         <div>
           <dt className="text-ink-muted-48">Barangay</dt>
-          <dd className="font-semibold">{incident.barangay ?? 'Unknown'}</dd>
+          <dd className="font-semibold">{displayBarangay}</dd>
         </div>
         <div>
           <dt className="text-ink-muted-48">Reported</dt>

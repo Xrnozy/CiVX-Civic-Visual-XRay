@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
-import { MarkerClusterer } from '@googlemaps/markerclusterer';
+import { MarkerClusterer, MarkerClustererEvents } from '@googlemaps/markerclusterer';
 import { DEFAULT_MAP_CENTER } from '../../shared/constants';
 
 interface MarkerData {
@@ -21,6 +21,7 @@ interface MarkerData {
   preview_ai_suggested_type?: string;
   preview_ai_confidence?: number;
   preview_created_at?: string;
+  barangay?: string;
 }
 
 interface Props {
@@ -42,6 +43,57 @@ const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad'
 function keyHint(key: string): string {
   if (key.length < 12) return '(check infra/.env)';
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
+}
+
+function clusterDotSize(count: number): number {
+  if (count >= 100) return 68;
+  if (count >= 10) return 60;
+  return 52;
+}
+
+function isValidMarker(mk: MarkerData): boolean {
+  if (mk.latitude == null || mk.longitude == null) return false;
+  if (Number.isNaN(mk.latitude) || Number.isNaN(mk.longitude)) return false;
+  if (mk.type === 'incident') return Boolean(mk.primary_issue_type);
+  return Boolean(mk.title);
+}
+
+function buildClusterDotIcon(count: number): any {
+  const size = clusterDotSize(count);
+  const fontSize = count >= 100 ? 48 : count >= 10 ? 54 : 60;
+  const svg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 240 240">`
+      + '<circle cx="120" cy="120" r="112" fill="#d93025" opacity="0.10"/>'
+      + '<circle cx="120" cy="120" r="92" fill="#d93025" opacity="0.18"/>'
+      + '<circle cx="120" cy="120" r="72" fill="#d93025" opacity="0.30"/>'
+      + '<circle cx="120" cy="120" r="54" fill="#d93025" opacity="0.48"/>'
+      + '<circle cx="120" cy="120" r="44" fill="#d93025" stroke="#ffffff" stroke-width="5"/>'
+      + `<text x="120" y="122" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-family="Roboto,Arial,sans-serif" font-size="${fontSize}" font-weight="500">${count}</text>`
+      + '</svg>'
+  );
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    scaledSize: new (window as any).google.maps.Size(size, size),
+    anchor: new (window as any).google.maps.Point(size / 2, size / 2),
+  };
+}
+
+function buildIncidentDotIcon(): any {
+  const size = 36;
+  const svg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 240 240">`
+      + '<circle cx="120" cy="120" r="112" fill="#d93025" opacity="0.10"/>'
+      + '<circle cx="120" cy="120" r="92" fill="#d93025" opacity="0.18"/>'
+      + '<circle cx="120" cy="120" r="72" fill="#d93025" opacity="0.30"/>'
+      + '<circle cx="120" cy="120" r="54" fill="#d93025" opacity="0.48"/>'
+      + '<circle cx="120" cy="120" r="44" fill="#d93025" stroke="#ffffff" stroke-width="5"/>'
+      + '</svg>'
+  );
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    scaledSize: new (window as any).google.maps.Size(size, size),
+    anchor: new (window as any).google.maps.Point(size / 2, size / 2),
+  };
 }
 
 function buildPinIcon(): any {
@@ -80,6 +132,8 @@ export function CivicMap({
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
   const markerClustererRef = useRef<MarkerClusterer | null>(null);
   const markerByIdRef = useRef<Map<string, any>>(new Map());
+  const pulseRef = useRef<Array<{ halo: any; anchor: any; phase: number; kind: 'incident' | 'cluster' }>>([]);
+  const pulseTimerRef = useRef<number | null>(null);
   const infoWindowRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
   const clickListenerRef = useRef<any>(null);
@@ -93,31 +147,40 @@ export function CivicMap({
       .replace(/'/g, '&#39;');
   }
 
-  function previewCardHtml(marker: MarkerData, expandButtonId: string): string {
-    const title = escapeHtml((marker.primary_issue_type || marker.title || 'Incident').replace(/_/g, ' '));
+  function formatDateBadge(iso?: string): string {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '—';
+    const month = date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+    return `${month} ${date.getDate()}`;
+  }
+
+  function previewCardHtml(marker: MarkerData, cardId: string): string {
+    const title = escapeHtml((marker.primary_issue_type || marker.title || 'Incident').replace(/_/g, ' ').toUpperCase());
+    const location = escapeHtml((marker.barangay || 'Unknown location').toUpperCase());
     const submitter = marker.submitter_type === 'lgu' ? 'LGU' : 'Community member';
+    const sourceLabel = escapeHtml(
+      (marker.source || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    );
     const submittedAt = marker.preview_created_at || marker.created_at;
-    const createdLabel = submittedAt ? escapeHtml(new Date(submittedAt).toLocaleString()) : 'Unknown';
-    const aiLabel = marker.preview_ai_suggested_type
-      ? `${escapeHtml(marker.preview_ai_suggested_type.replace(/_/g, ' '))}${typeof marker.preview_ai_confidence === 'number' ? ` (${Math.round(marker.preview_ai_confidence * 100)}%)` : ''}`
-      : 'Pending';
-    const lat = Number.isFinite(marker.latitude) ? marker.latitude.toFixed(6) : 'Unknown';
-    const lng = Number.isFinite(marker.longitude) ? marker.longitude.toFixed(6) : 'Unknown';
-    const image = marker.preview_photo_url
-      ? `<img src="${escapeHtml(marker.preview_photo_url)}" alt="Incident preview" style="height:58px;width:58px;border-radius:10px;object-fit:cover;flex-shrink:0;" />`
-      : `<div style="height:58px;width:58px;border-radius:10px;background:#f5f5f7;color:#7a7a7a;display:flex;align-items:center;justify-content:center;font-size:11px;">No photo</div>`;
+    const dateBadge = escapeHtml(formatDateBadge(submittedAt));
+    const subtitle = `${submitter} · ${sourceLabel}`;
+    const photoUrl = marker.preview_photo_url ? escapeHtml(marker.preview_photo_url) : '';
+    const bgStyle = photoUrl
+      ? `background-image:url('${photoUrl}');background-size:cover;background-position:center;`
+      : 'background:linear-gradient(145deg,#667085 0%,#344054 100%);';
+
     return `
-      <div style="width:248px;color:#1d1d1f;font-family:Inter,system-ui,-apple-system,sans-serif;line-height:1.35;">
-        <div style="display:flex;gap:10px;align-items:flex-start;">
-          ${image}
-          <div style="min-width:0;">
-            <div style="font-size:13px;font-weight:700;text-transform:capitalize;">${title}</div>
-            <div style="margin-top:3px;font-size:11px;color:#7a7a7a;">${submitter} · ${createdLabel}</div>
-            <div style="margin-top:6px;font-size:11px;color:#333;">AI: ${aiLabel}</div>
+      <div id="${cardId}" style="width:256px;height:256px;position:relative;border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 18px 40px rgba(0,0,0,0.28);${bgStyle}font-family:Inter,system-ui,-apple-system,sans-serif;">
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.38) 0%,rgba(0,0,0,0.08) 38%,rgba(0,0,0,0.08) 52%,rgba(0,0,0,0.78) 100%);"></div>
+        <div style="position:absolute;top:16px;left:16px;right:16px;font-size:10px;font-weight:600;letter-spacing:0.08em;line-height:1.35;color:rgba(255,255,255,0.95);text-shadow:0 1px 4px rgba(0,0,0,0.55);">${location}</div>
+        <div style="position:absolute;bottom:16px;left:16px;right:16px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;">
+          <div style="min-width:0;padding-right:4px;">
+            <div style="font-size:22px;font-weight:800;line-height:1.05;letter-spacing:0.01em;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,0.5);">${title}</div>
+            <div style="margin-top:8px;font-size:11px;font-weight:500;color:rgba(255,255,255,0.94);text-shadow:0 1px 4px rgba(0,0,0,0.45);">${subtitle}</div>
           </div>
+          <div style="flex-shrink:0;border-radius:999px;background:rgba(0,0,0,0.62);backdrop-filter:blur(4px);padding:6px 11px;font-size:10px;font-weight:700;letter-spacing:0.05em;color:#fff;">${dateBadge}</div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#333;">${lat}, ${lng}</div>
-        <button id="${expandButtonId}" style="margin-top:8px;width:100%;border:0;border-radius:999px;background:#0066cc;color:#fff;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;">Expand details</button>
       </div>
     `;
   }
@@ -202,6 +265,15 @@ export function CivicMap({
       markerClustererRef.current.clearMarkers();
       markerClustererRef.current = null;
     }
+    if (pulseTimerRef.current) {
+      window.clearInterval(pulseTimerRef.current);
+      pulseTimerRef.current = null;
+    }
+    pulseRef.current.forEach(({ halo, anchor }) => {
+      halo.setMap(null);
+      anchor.setMap(null);
+    });
+    pulseRef.current = [];
     markerByIdRef.current.clear();
     infoWindowRef.current?.close();
     if (selectedMarkerRef.current) {
@@ -210,27 +282,109 @@ export function CivicMap({
       selectedMarkerRef.current = null;
     }
 
-    const gmarkers = markers.map((mk) => {
-      const marker = new gmaps.Marker({
+    const validMarkers = markers.filter(isValidMarker);
+
+    const gmarkers = validMarkers.flatMap((mk) => {
+      const haloMarker = new gmaps.Marker({
+        position: { lat: mk.latitude, lng: mk.longitude },
+        zIndex: 1,
+      });
+
+      const pinMarker = new gmaps.Marker({
         position: { lat: mk.latitude, lng: mk.longitude },
         title: mk.primary_issue_type || mk.title,
-        icon:
-          mk.type === 'cleanup'
-            ? undefined
-            : {
-                path: gmaps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: '#0066cc',
-                fillOpacity: 1,
-                strokeWeight: 0,
-              },
+        icon: buildIncidentDotIcon(),
+        zIndex: 2,
       });
-      marker.addListener('click', () => {
+      pinMarker.addListener('click', () => {
         onMarkerSelect?.(mk);
       });
-      markerByIdRef.current.set(mk.id, marker);
-      return marker;
+      markerByIdRef.current.set(mk.id, pinMarker);
+      pulseRef.current.push({
+        halo: haloMarker,
+        anchor: pinMarker,
+        phase: Math.random() * Math.PI * 2,
+        kind: 'incident',
+      });
+      return [pinMarker];
     });
+
+    function startPulseLoop() {
+      if (pulseTimerRef.current) return;
+      pulseTimerRef.current = window.setInterval(() => {
+        pulseRef.current.forEach((entry) => {
+          const anchorMap = entry.anchor.getMap();
+          if (!anchorMap || !entry.anchor.getVisible()) {
+            entry.halo.setMap(null);
+            return;
+          }
+          const position = entry.anchor.getPosition();
+          if (position) {
+            entry.halo.setPosition(position);
+          }
+          entry.halo.setMap(anchorMap);
+          entry.phase += 0.14;
+          const baseScale = entry.kind === 'cluster' ? 34 : 12;
+          const scale = baseScale + (Math.sin(entry.phase) + 1) * 4;
+          const fillOpacity = 0.12 + (Math.sin(entry.phase) + 1) * 0.08;
+          const strokeOpacity = 0.2 + (Math.sin(entry.phase) + 1) * 0.12;
+          entry.halo.setIcon({
+            path: gmaps.SymbolPath.CIRCLE,
+            scale,
+            fillColor: '#d93025',
+            fillOpacity,
+            strokeColor: '#d93025',
+            strokeOpacity,
+            strokeWeight: 1,
+          });
+        });
+      }, 70);
+    }
+
+    function syncClusterPulses() {
+      const clusterer = markerClustererRef.current as { clusters?: Array<{ markers: unknown[]; marker?: unknown }> } | null;
+      if (!clusterer?.clusters) return;
+
+      const activeAnchors = new Set<unknown>();
+      clusterer.clusters.forEach((cluster) => {
+        if (cluster.markers.length > 1 && cluster.marker) {
+          activeAnchors.add(cluster.marker);
+        }
+      });
+
+      pulseRef.current = pulseRef.current.filter((entry) => {
+        if (entry.kind !== 'cluster') return true;
+        if (activeAnchors.has(entry.anchor)) return true;
+        entry.halo.setMap(null);
+        return false;
+      });
+
+      clusterer.clusters.forEach((cluster) => {
+        if (cluster.markers.length <= 1 || !cluster.marker) return;
+        const anchor = cluster.marker as { getPosition: () => unknown; getZIndex?: () => number };
+        const alreadyTracked = pulseRef.current.some(
+          (entry) => entry.kind === 'cluster' && entry.anchor === cluster.marker,
+        );
+        if (alreadyTracked) return;
+
+        const haloMarker = new gmaps.Marker({
+          position: anchor.getPosition(),
+          zIndex: Number(anchor.getZIndex?.() ?? 1000) - 1,
+        });
+        pulseRef.current.push({
+          halo: haloMarker,
+          anchor: cluster.marker,
+          phase: Math.random() * Math.PI * 2,
+          kind: 'cluster',
+        });
+      });
+
+      startPulseLoop();
+    }
+
+    if (pulseRef.current.length) {
+      startPulseLoop();
+    }
 
     if (selectedLocation) {
       const haloMarker = new gmaps.Marker({
@@ -297,13 +451,42 @@ export function CivicMap({
       }
     }
 
+    let clusterEndListener: { remove: () => void } | null = null;
+
     if (gmarkers.length) {
-      markerClustererRef.current = new MarkerClusterer({ markers: gmarkers, map });
+      const clusterer = new MarkerClusterer({
+        markers: gmarkers,
+        map,
+        renderer: {
+          render: ({ count, position }) => new gmaps.Marker({
+            position,
+            icon: buildClusterDotIcon(count),
+            zIndex: 1000 + count,
+          }),
+        },
+      });
+      markerClustererRef.current = clusterer;
+      clusterEndListener = gmaps.event.addListener(
+        clusterer,
+        MarkerClustererEvents.CLUSTERING_END,
+        syncClusterPulses,
+      );
+      syncClusterPulses();
     }
 
     return () => {
+      clusterEndListener?.remove();
       markerClustererRef.current?.clearMarkers();
       markerClustererRef.current = null;
+      if (pulseTimerRef.current) {
+        window.clearInterval(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+      pulseRef.current.forEach(({ halo, anchor }) => {
+        halo.setMap(null);
+        anchor.setMap(null);
+      });
+      pulseRef.current = [];
       selectedMarkerRef.current?.dispose?.();
       selectedMarkerRef.current?.setMap(null);
       selectedMarkerRef.current = null;
@@ -327,16 +510,42 @@ export function CivicMap({
     }
 
     if (!infoWindowRef.current) {
-      infoWindowRef.current = new gmaps.InfoWindow();
+      infoWindowRef.current = new gmaps.InfoWindow({ headerDisabled: true });
     }
-    const buttonId = `civx-expand-${markerData.id}`;
-    infoWindowRef.current.setContent(previewCardHtml(markerData, buttonId));
+    const cardId = `civx-preview-${markerData.id}`;
+    infoWindowRef.current.setContent(previewCardHtml(markerData, cardId));
     infoWindowRef.current.open({ map, anchor: marker });
 
     gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', () => {
-      const button = document.getElementById(buttonId);
-      if (!button) return;
-      button.onclick = () => onPreviewExpand?.(markerData.id);
+      const iwRoot = document.querySelector('.gm-style-iw') as HTMLElement | null;
+      const iwOuter = document.querySelector('.gm-style-iw-c') as HTMLElement | null;
+      const iwInner = document.querySelector('.gm-style-iw-d') as HTMLElement | null;
+      const iwHeader = document.querySelector('.gm-style-iw-ch') as HTMLElement | null;
+      if (iwRoot) {
+        iwRoot.style.padding = '0';
+        iwRoot.style.maxWidth = 'none';
+      }
+      if (iwHeader) {
+        iwHeader.style.display = 'none';
+      }
+      if (iwOuter) {
+        iwOuter.style.padding = '0';
+        iwOuter.style.borderRadius = '18px';
+        iwOuter.style.overflow = 'hidden';
+        iwOuter.style.boxShadow = 'none';
+        iwOuter.style.background = 'transparent';
+      }
+      if (iwInner) {
+        iwInner.style.overflow = 'hidden';
+        iwInner.style.maxHeight = 'none';
+        iwInner.style.padding = '0';
+      }
+      document.querySelectorAll('.gm-ui-hover-effect').forEach((node) => {
+        (node as HTMLElement).style.display = 'none';
+      });
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      card.onclick = () => onPreviewExpand?.(markerData.id);
     });
   }, [map, markers, selectedMarkerId, onPreviewExpand]);
 

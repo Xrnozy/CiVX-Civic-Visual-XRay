@@ -4,10 +4,33 @@ from app.auth.firebase import AuthUser, get_current_user, require_roles, get_opt
 from app.db import get_supabase
 from app.models.schemas import IncidentUpdate
 from app.utils.audit import log_audit, sanitize_incident_public, sanitize_incident_lgu, normalize_submitter_type
+from app.utils.geocoding import resolve_barangay
+from app.utils.storage import resolve_photo_url, resolve_photo_urls
 from app.agents.lgu_triage import LGUTriageAgent
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 LGU = ("lgu_admin", "lgu_staff", "field_worker")
+
+
+def _barangay_from_reports(sb, incident_id: str, incident: dict) -> str:
+    reports = (
+        sb.table("reports")
+        .select("address_text")
+        .eq("merged_incident_id", incident_id)
+        .order("created_at")
+        .execute()
+        .data
+        or []
+    )
+    address_text = next(
+        (r["address_text"] for r in reports if r.get("address_text") and r["address_text"].strip()),
+        None,
+    )
+    return resolve_barangay(
+        address_text=address_text,
+        latitude=incident.get("latitude"),
+        longitude=incident.get("longitude"),
+    )
 
 
 @router.get("/public")
@@ -49,7 +72,7 @@ def list_incidents(
 @router.get("/{incident_id}/reports")
 def list_incident_reports(incident_id: str, user: AuthUser | None = Depends(get_optional_user)):
     sb = get_supabase()
-    incident = sb.table("incidents").select("id,status,source").eq("id", incident_id).single().execute().data
+    incident = sb.table("incidents").select("id,status,source,verified_at").eq("id", incident_id).single().execute().data
     can_view_all = bool(user and user.role in LGU)
     if not can_view_all and incident["status"] not in {"verified", "assigned", "ongoing", "resolved"}:
         raise HTTPException(status_code=403, detail="Not allowed")
@@ -65,7 +88,20 @@ def list_incident_reports(incident_id: str, user: AuthUser | None = Depends(get_
     )
 
     submitter_type = normalize_submitter_type(incident.get("source"))
-    return [{**report, "submitter_type": submitter_type} for report in reports]
+    incident_source = incident.get("source")
+    incident_status = incident.get("status")
+    signed_reports = []
+    for report in reports:
+        signed = {
+            **report,
+            "submitter_type": submitter_type,
+            "source": incident_source,
+            "incident_status": incident_status,
+            "photo_url": resolve_photo_url(report.get("photo_url")),
+            "photo_urls": resolve_photo_urls(report.get("photo_urls") if isinstance(report.get("photo_urls"), list) else []),
+        }
+        signed_reports.append(signed)
+    return signed_reports
 
 
 @router.get("/{incident_id}")
@@ -87,6 +123,8 @@ def update_incident(
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if "status" in updates and updates["status"] == "verified":
         updates["verified_at"] = "now()"
+        incident = sb.table("incidents").select("*").eq("id", incident_id).single().execute().data
+        updates["barangay"] = _barangay_from_reports(sb, incident_id, incident)
     if "status" in updates and updates["status"] == "resolved":
         updates["resolved_at"] = "now()"
     sb.table("incidents").update(updates).eq("id", incident_id).execute()
@@ -97,9 +135,15 @@ def update_incident(
 @router.post("/{incident_id}/verify")
 def verify_incident(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
     sb = get_supabase()
-    sb.table("incidents").update({"status": "verified", "verified_at": "now()"}).eq("id", incident_id).execute()
-    log_audit(user.id, "verify", "incident", incident_id, {})
-    return {"status": "verified"}
+    incident = sb.table("incidents").select("*").eq("id", incident_id).single().execute().data
+    barangay = _barangay_from_reports(sb, incident_id, incident)
+    sb.table("incidents").update({
+        "status": "verified",
+        "verified_at": "now()",
+        "barangay": barangay,
+    }).eq("id", incident_id).execute()
+    log_audit(user.id, "verify", "incident", incident_id, {"barangay": barangay})
+    return {"status": "verified", "barangay": barangay}
 
 
 @router.post("/{incident_id}/reject")
