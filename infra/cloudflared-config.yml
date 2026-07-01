@@ -1,0 +1,15 @@
+# Cloudflare Tunnel configuration for civx.xrnozy.me
+# Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/
+#
+# 1. cloudflared tunnel login
+# 2. cloudflared tunnel create civx
+# 3. cloudflared tunnel route dns civx civx.xrnozy.me
+# 4. cloudflared tunnel run --config infra/cloudflared-config.yml civx
+
+tunnel: civx
+credentials-file: C:\Users\MY PC\.cloudflared\civx.json
+
+ingress:
+  - hostname: civx.xrnozy.me
+    service: http://localhost:80
+  - service: http_status:404

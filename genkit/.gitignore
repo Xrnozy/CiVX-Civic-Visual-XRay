@@ -1,34 +1,13 @@
-# Dependencies and build output
-node_modules/
-dist/
-web/dist/
-.expo/
-.firebase/
-.supabase/
-supabase/.temp/
-.cloudflared/
-cloudflared/
-.cursor/
-*.tsbuildinfo
-
-# Python
-venv/
-backend/venv/
-genkit/venv/
+# Python bytecode
 __pycache__/
-*.pyc
 
-# Model artifacts
-model/
-*.pt
+# Python virtual environment
+venv/
 
 # Environment files
 .env
 .env.*
-**/.env
-**/.env.*
 !.env.example
-!**/.env.example
 
 # Secrets, credentials, and local key material
 *service-account*.json
@@ -65,11 +44,6 @@ oauth-client*.json
 *.bak
 *.sql.gz
 
-# Local logs can include tokens, keys, or request details
+# Local-only overrides and logs
+*.local
 *.log
-debug-*.log
-firebase-debug.log
-firestore-debug.log
-database-debug.log
-storage-debug.log
-ui-debug.log

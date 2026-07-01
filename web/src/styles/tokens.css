@@ -1,0 +1,388 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #0066cc;
+  --color-primary-focus: #0071e3;
+  --color-primary-on-dark: #2997ff;
+  --color-canvas: #ffffff;
+  --color-canvas-parchment: #f5f5f7;
+  --color-surface-pearl: #fafafc;
+  --color-surface-tile-1: #272729;
+  --color-surface-tile-2: #2a2a2c;
+  --color-surface-tile-3: #252527;
+  --color-surface-black: #000000;
+  --color-ink: #1d1d1f;
+  --color-ink-muted-80: #333333;
+  --color-ink-muted-48: #7a7a7a;
+  --color-body-muted: #cccccc;
+  --color-hairline: #e0e0e0;
+  --color-divider-soft: #f0f0f0;
+  --font-sans: Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius-pill: 9999px;
+  --radius-card: 18px;
+  --shadow-product: 3px 5px 30px 0 rgba(0, 0, 0, 0.22);
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--color-ink);
+  background: var(--color-canvas);
+  font-size: 17px;
+  line-height: 1.47;
+  letter-spacing: -0.374px;
+  margin: 0;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* Buttons */
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-full bg-primary px-[22px] py-[11px] text-[17px] text-white transition active:scale-95;
+}
+
+.btn-primary:focus-visible {
+  outline: 2px solid var(--color-primary-focus);
+  outline-offset: 2px;
+}
+
+.btn-secondary-pill {
+  @apply inline-flex items-center justify-center rounded-full border border-primary px-[22px] py-[11px] text-[17px] text-primary transition active:scale-95;
+}
+
+.btn-dark-utility {
+  @apply inline-flex items-center justify-center rounded-full bg-ink px-[22px] py-[11px] text-[17px] font-medium text-white transition active:scale-95;
+}
+
+.btn-dark-utility:focus-visible {
+  outline: 2px solid var(--color-ink-muted-80);
+  outline-offset: 2px;
+}
+
+/* Product tiles — full viewport Apple rhythm */
+.product-tile-light {
+  @apply flex min-h-[85vh] flex-col items-center justify-center bg-canvas px-6 text-center text-ink;
+  padding-top: 80px;
+  padding-bottom: 80px;
+}
+
+.product-tile-dark {
+  @apply flex min-h-[85vh] flex-col items-center justify-center bg-surface-tile-1 px-6 text-center text-white;
+  padding-top: 80px;
+  padding-bottom: 80px;
+}
+
+.product-tile-parchment {
+  @apply flex min-h-[85vh] flex-col items-center justify-center bg-canvas-parchment px-6 text-center text-ink;
+  padding-top: 80px;
+  padding-bottom: 80px;
+}
+
+/* Cards */
+.store-utility-card {
+  @apply rounded-[18px] border border-hairline bg-canvas p-6 transition;
+}
+
+.store-utility-card:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-hairline));
+}
+
+.stat-card {
+  @apply rounded-[18px] border border-hairline bg-canvas p-6 text-left;
+}
+
+.stat-card-value {
+  @apply mt-2 text-[40px] font-semibold tracking-tight text-ink;
+}
+
+.stat-card-label {
+  @apply text-sm text-ink-muted-48;
+}
+
+/* Filters */
+.filter-select {
+  @apply rounded-full border border-hairline bg-canvas px-5 py-3 text-sm text-ink outline-none transition;
+  min-height: 44px;
+}
+
+.filter-select:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in oklab, var(--color-primary) 20%, transparent);
+}
+
+/* Map container */
+.map-shell {
+  @apply overflow-hidden rounded-[18px] border border-hairline bg-canvas;
+  box-shadow: var(--shadow-product);
+}
+
+/* Page sections */
+.page-hero {
+  @apply bg-canvas-parchment px-6 py-16 text-center;
+}
+
+.page-hero-title {
+  @apply text-[40px] font-semibold tracking-tight text-ink md:text-[56px];
+}
+
+.page-hero-lead {
+  @apply mx-auto mt-4 max-w-2xl text-[21px] text-ink-muted-80;
+}
+
+.page-content {
+  @apply mx-auto max-w-[1440px] px-6 py-12;
+}
+
+/* Civic hero visual */
+.civic-visual {
+  @apply relative mx-auto mt-12 flex h-64 w-full max-w-xl items-center justify-center md:h-80;
+}
+
+.civic-visual-inner {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  background: var(--color-canvas-parchment);
+  border: 1px solid var(--color-hairline);
+  box-shadow: var(--shadow-product);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.product-tile-dark .civic-visual-inner {
+  background: var(--color-surface-tile-2);
+  border-color: color-mix(in oklab, white 10%, transparent);
+}
+
+/* Feature grid */
+.feature-grid {
+  @apply grid gap-6 md:grid-cols-3;
+}
+
+.feature-item {
+  @apply rounded-[18px] border border-hairline bg-canvas p-8 text-left;
+}
+
+.feature-item h3 {
+  @apply text-[21px] font-semibold text-ink;
+}
+
+.feature-item p {
+  @apply mt-3 text-sm leading-relaxed text-ink-muted-80;
+}
+
+.feature-icon {
+  @apply mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-primary text-lg text-white;
+}
+
+/* Login form */
+.auth-card {
+  @apply mx-auto max-w-md rounded-[18px] border border-hairline bg-canvas p-10;
+  box-shadow: var(--shadow-product);
+}
+
+.auth-input {
+  @apply w-full rounded-full border border-hairline bg-canvas px-5 py-3 text-[17px] outline-none transition;
+  min-height: 44px;
+}
+
+.auth-input:focus {
+  border-color: var(--color-primary);
+}
+
+.btn-google {
+  @apply inline-flex items-center justify-center gap-3 rounded-full border border-hairline bg-canvas px-[22px] py-[11px] text-[17px] font-medium text-ink transition active:scale-95 disabled:opacity-50;
+}
+
+.btn-google:hover:not(:disabled) {
+  border-color: color-mix(in oklab, var(--color-primary) 30%, var(--color-hairline));
+}
+
+/* Link on dark */
+.text-link-on-dark {
+  color: var(--color-primary-on-dark);
+}
+
+/* Eyebrow */
+.eyebrow {
+  @apply mb-4 text-xs font-semibold uppercase tracking-widest text-primary;
+}
+
+.product-tile-dark .eyebrow {
+  color: var(--color-primary-on-dark);
+}
+
+/* Registration */
+.auth-card-wide {
+  @apply mx-auto w-full max-w-xl rounded-[22px] border border-hairline bg-canvas p-8 md:p-10;
+  box-shadow: var(--shadow-product);
+}
+
+.register-steps {
+  @apply mb-8 flex items-center gap-2;
+}
+
+.register-step {
+  @apply flex flex-1 flex-col gap-1;
+}
+
+.register-step-bar {
+  @apply h-1 rounded-full bg-hairline;
+}
+
+.register-step-bar-active {
+  background: var(--color-primary);
+}
+
+.register-step-label {
+  @apply text-[11px] font-medium text-ink-muted-48;
+}
+
+.register-step-label-active {
+  @apply text-primary;
+}
+
+.account-type-card {
+  @apply w-full rounded-[18px] border border-hairline bg-canvas p-5 text-left transition;
+}
+
+.account-type-card:hover {
+  border-color: color-mix(in oklab, var(--color-primary) 35%, var(--color-hairline));
+  box-shadow: 0 8px 24px color-mix(in oklab, var(--color-primary) 8%, transparent);
+}
+
+.account-type-card-worker {
+  @apply rounded-[18px] border border-hairline bg-gradient-to-b from-canvas to-canvas-parchment p-5;
+}
+
+.account-type-icon {
+  @apply mb-3 flex h-11 w-11 items-center justify-center rounded-full text-lg;
+}
+
+.account-type-icon-citizen {
+  background: color-mix(in oklab, var(--color-primary) 12%, white);
+}
+
+.account-type-icon-organizer {
+  background: color-mix(in oklab, #7c3aed 12%, white);
+}
+
+.account-type-icon-worker {
+  background: color-mix(in oklab, #059669 12%, white);
+}
+
+/* Invite QR capture */
+.invite-qr-capture {
+  @apply mt-4;
+}
+
+.invite-qr-tabs {
+  @apply grid grid-cols-3 gap-2 rounded-[14px] border border-hairline bg-canvas-parchment p-1;
+}
+
+.invite-qr-tab {
+  @apply flex flex-col items-center rounded-[10px] px-2 py-2.5 text-xs text-ink-muted-48 transition;
+}
+
+.invite-qr-tab-active {
+  @apply bg-canvas text-ink shadow-sm;
+  box-shadow: var(--shadow-product);
+}
+
+.invite-qr-scan-shell {
+  @apply mt-4;
+}
+
+.invite-qr-viewport {
+  @apply min-h-[240px] border border-hairline bg-black/5;
+}
+
+.invite-qr-viewport video {
+  border-radius: 14px;
+}
+
+.invite-qr-upload-shell {
+  @apply mt-4;
+}
+
+.invite-qr-dropzone {
+  @apply flex w-full flex-col items-center justify-center gap-2 rounded-[18px] border-2 border-dashed border-hairline bg-canvas px-6 py-10 text-center transition;
+}
+
+.invite-qr-dropzone:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: color-mix(in oklab, var(--color-primary) 4%, var(--color-canvas));
+}
+
+.invite-qr-dropzone-icon {
+  @apply flex h-12 w-12 items-center justify-center rounded-full bg-primary text-xl text-white;
+}
+
+.invite-qr-token-preview {
+  @apply mt-4 rounded-[14px] border border-hairline bg-canvas-parchment px-4 py-3;
+}
+
+/* LGU staff management */
+.staff-page-header {
+  @apply border-b border-hairline bg-canvas-parchment px-6 py-10;
+}
+
+.staff-role-badge {
+  @apply inline-flex rounded-full px-3 py-1 text-xs font-semibold;
+}
+
+.staff-role-badge-admin {
+  @apply bg-violet-100 text-violet-800;
+}
+
+.staff-role-badge-staff {
+  @apply bg-sky-100 text-sky-800;
+}
+
+.staff-role-badge-field {
+  @apply bg-emerald-100 text-emerald-800;
+}
+
+.staff-role-badge-other {
+  @apply bg-gray-100 text-gray-700;
+}
+
+.staff-user-avatar {
+  @apply flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-white;
+}
+
+.staff-search-card {
+  @apply rounded-[18px] border border-hairline bg-canvas p-6;
+  box-shadow: var(--shadow-product);
+}
+
+.staff-team-card {
+  @apply overflow-hidden rounded-[18px] border border-hairline bg-canvas;
+  box-shadow: var(--shadow-product);
+}
+
+.staff-team-row {
+  @apply flex flex-col gap-4 border-b border-hairline/70 p-5 last:border-b-0 md:flex-row md:items-center md:justify-between;
+}
+
+.staff-select {
+  @apply rounded-full border border-hairline bg-canvas px-4 py-2.5 text-sm outline-none transition;
+  min-height: 40px;
+}
+
+.staff-select:focus {
+  border-color: var(--color-primary);
+}

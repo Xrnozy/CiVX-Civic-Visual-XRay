@@ -1,0 +1,34 @@
+type User @table {
+  email: String!
+  createdAt: Timestamp!
+  displayName: String
+  avatarUrl: String
+}
+
+type Category @table {
+  name: String!
+  colorHex: String
+  user: User!
+}
+
+type Task @table {
+  title: String!
+  status: String!
+  dueDate: Timestamp
+  description: String
+  user: User!
+  category: Category
+}
+
+type Habit @table {
+  title: String!
+  frequency: String!
+  goalDescription: String
+  user: User!
+  category: Category
+}
+
+type HabitLog @table {
+  completedDate: Date!
+  habit: Habit!
+}
