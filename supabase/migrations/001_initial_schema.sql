@@ -89,6 +89,7 @@ CREATE TABLE reports (
   longitude DOUBLE PRECISION NOT NULL,
   address_text TEXT,
   photo_url TEXT NOT NULL,
+  photo_urls JSONB DEFAULT '[]',
   ai_suggested_type TEXT,
   ai_confidence NUMERIC(5,4),
   ai_bounding_box JSONB,

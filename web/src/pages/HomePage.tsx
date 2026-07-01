@@ -41,7 +41,7 @@ export default function HomePage() {
         eyebrow="AI + Operations"
         title="Civic intelligence for everyone"
         tagline="AI-assisted detection, duplicate merging, and LGU coordination — built for real communities."
-        ctaPrimary={{ label: 'Report an Issue', to: '/login' }}
+        ctaPrimary={{ label: 'Report an Issue', to: '/report' }}
         ctaSecondary={{ label: 'LGU Dashboard', to: '/lgu' }}
       />
       <section className="bg-canvas px-6 py-20">

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, UploadFile, File, Form, BackgroundTasks
+from fastapi import APIRouter, Depends, UploadFile, File, Form, BackgroundTasks, HTTPException
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
@@ -21,14 +21,21 @@ async def create_report(
     issue_type: str | None = Form(None),
     barangay: str | None = Form(None),
     photo: UploadFile | None = File(None),
+    photos: list[UploadFile] = File(default=[]),
     photo_url: str | None = Form(None),
     user: AuthUser = Depends(get_current_user),
 ):
-    photo_bytes = await photo.read() if photo else b""
+    uploaded_files = [file for file in ([photo] if photo else []) + photos if file]
+    if len(uploaded_files) > 3:
+        raise HTTPException(status_code=400, detail="You can upload up to 3 photos")
+
+    photo_payloads: list[dict[str, object]] = []
+    for file in uploaded_files:
+        photo_payloads.append({"bytes": await file.read(), "filename": file.filename})
     agent = ReportIntakeAgent()
     result = agent.process(
         user_id=user.id,
-        photo_bytes=photo_bytes,
+        photo_payloads=photo_payloads,
         latitude=latitude,
         longitude=longitude,
         description=description,
