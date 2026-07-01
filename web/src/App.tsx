@@ -7,7 +7,8 @@ import LoginPage from './pages/LoginPage';
 
 const MapPage = lazy(() => import('./pages/MapPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
-const GalleryPage = lazy(() => import('./pages/GalleryPage'));
+const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
+const LazyGalleryPage = lazy(() => import('./pages/GalleryPage'));
 const TransparencyPage = lazy(() => import('./pages/TransparencyPage'));
 const ReportPage = lazy(() => import('./pages/ReportPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
@@ -37,11 +38,12 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/map" element={<MapPage />} />
+          <Route path="/events/:eventId" element={<EventDetailPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/analyzer" element={<AnalyzerTestPage />} />
           <Route path="/analyzer/test" element={<AnalyzerTestPage />} />
-          <Route path="/gallery" element={<GalleryPage />} />
+          <Route path="/gallery" element={<LazyGalleryPage />} />
           <Route path="/transparency" element={<TransparencyPage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
