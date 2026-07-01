@@ -15,13 +15,8 @@ interface MarkerData {
 interface Props {
   markers: MarkerData[];
   lguMode?: boolean;
-<<<<<<< HEAD
-  center?: { lat: number; lng: number };
-  zoom?: number;
-=======
   selectedLocation?: { latitude: number; longitude: number } | null;
   onLocationPick?: (latitude: number, longitude: number) => void;
->>>>>>> origin/mapping-features
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -31,9 +26,6 @@ function keyHint(key: string): string {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
-<<<<<<< HEAD
-export function CivicMap({ markers, lguMode = false, center, zoom = 13 }: Props) {
-=======
 function buildPinIcon(): any {
   const svg = encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="56" viewBox="0 0 42 56">'
@@ -51,7 +43,6 @@ function buildPinIcon(): any {
 }
 
 export function CivicMap({ markers, lguMode = false, selectedLocation, onLocationPick }: Props) {
->>>>>>> origin/mapping-features
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -85,11 +76,6 @@ export function CivicMap({ markers, lguMode = false, selectedLocation, onLocatio
       .load()
       .then(() => {
         if (cancelled || !ref.current) return;
-<<<<<<< HEAD
-        const m = new google.maps.Map(ref.current, {
-          center: center ?? DEFAULT_MAP_CENTER,
-          zoom,
-=======
         const gmaps = (window as any).google?.maps;
         if (!gmaps) {
           setMapError('load_failed');
@@ -99,7 +85,6 @@ export function CivicMap({ markers, lguMode = false, selectedLocation, onLocatio
         const m = new gmaps.Map(ref.current, {
           center: DEFAULT_MAP_CENTER,
           zoom: 13,
->>>>>>> origin/mapping-features
           styles: lguMode ? undefined : [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
           disableDefaultUI: false,
         });
@@ -117,7 +102,7 @@ export function CivicMap({ markers, lguMode = false, selectedLocation, onLocatio
       cancelled = true;
       delete (window as Window & { gm_authFailure?: () => void }).gm_authFailure;
     };
-  }, [apiKey, lguMode, center, zoom]);
+  }, [apiKey, lguMode]);
 
   useEffect(() => {
     if (!map) return;
