@@ -15,6 +15,8 @@ interface MarkerData {
 interface Props {
   markers: MarkerData[];
   lguMode?: boolean;
+  center?: { lat: number; lng: number };
+  zoom?: number;
   selectedLocation?: { latitude: number; longitude: number } | null;
   onLocationPick?: (latitude: number, longitude: number) => void;
 }
@@ -42,7 +44,14 @@ function buildPinIcon(): any {
   };
 }
 
-export function CivicMap({ markers, lguMode = false, selectedLocation, onLocationPick }: Props) {
+export function CivicMap({
+  markers,
+  lguMode = false,
+  center = DEFAULT_MAP_CENTER,
+  zoom = 13,
+  selectedLocation,
+  onLocationPick,
+}: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -83,8 +92,8 @@ export function CivicMap({ markers, lguMode = false, selectedLocation, onLocatio
           return;
         }
         const m = new gmaps.Map(ref.current, {
-          center: DEFAULT_MAP_CENTER,
-          zoom: 13,
+          center,
+          zoom,
           styles: lguMode ? undefined : [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
           disableDefaultUI: false,
         });
