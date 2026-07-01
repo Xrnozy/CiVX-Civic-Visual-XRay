@@ -15,6 +15,8 @@ interface MarkerData {
 interface Props {
   markers: MarkerData[];
   lguMode?: boolean;
+  center?: { lat: number; lng: number };
+  zoom?: number;
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -24,7 +26,7 @@ function keyHint(key: string): string {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
-export function CivicMap({ markers, lguMode = false }: Props) {
+export function CivicMap({ markers, lguMode = false, center, zoom = 13 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -56,8 +58,8 @@ export function CivicMap({ markers, lguMode = false }: Props) {
       .then(() => {
         if (cancelled || !ref.current) return;
         const m = new google.maps.Map(ref.current, {
-          center: DEFAULT_MAP_CENTER,
-          zoom: 13,
+          center: center ?? DEFAULT_MAP_CENTER,
+          zoom,
           styles: lguMode ? undefined : [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
           disableDefaultUI: false,
         });
@@ -75,7 +77,7 @@ export function CivicMap({ markers, lguMode = false }: Props) {
       cancelled = true;
       delete (window as Window & { gm_authFailure?: () => void }).gm_authFailure;
     };
-  }, [apiKey, lguMode]);
+  }, [apiKey, lguMode, center, zoom]);
 
   useEffect(() => {
     if (!map) return;

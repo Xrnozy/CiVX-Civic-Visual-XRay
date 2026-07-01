@@ -35,5 +35,9 @@ class LGUTriageAgent:
         sb = get_supabase()
         inc = sb.table("incidents").select("*").eq("id", incident_id).single().execute().data
         triage = self.prioritize(inc)
-        sb.table("incidents").update(triage).eq("id", incident_id).execute()
+        updates = {
+            "triage_priority": triage["triage_priority"],
+            "suggested_department_id": triage["suggested_department_id"],
+        }
+        sb.table("incidents").update(updates).eq("id", incident_id).execute()
         return triage
