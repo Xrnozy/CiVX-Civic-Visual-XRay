@@ -15,6 +15,7 @@ module.exports = {
     plugins: [
       'expo-router',
       'expo-asset',
+      'expo-web-browser',
       ['expo-camera', {
         cameraPermission: 'Allow CiVX to take photos for civic reports and dashcam recording.',
         barcodeScannerEnabled: true,
