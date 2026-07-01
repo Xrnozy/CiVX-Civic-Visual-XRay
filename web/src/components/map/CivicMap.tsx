@@ -22,6 +22,7 @@ interface MarkerData {
   preview_ai_confidence?: number;
   preview_created_at?: string;
   barangay?: string;
+  scheduled_start?: string;
 }
 
 interface Props {
@@ -147,14 +148,6 @@ export function CivicMap({
       .replace(/'/g, '&#39;');
   }
 
-  function formatDateBadge(iso?: string): string {
-    if (!iso) return '—';
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return '—';
-    const month = date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
-    return `${month} ${date.getDate()}`;
-  }
-
   function previewCardHtml(marker: MarkerData, cardId: string): string {
     const title = escapeHtml((marker.primary_issue_type || marker.title || 'Incident').replace(/_/g, ' ').toUpperCase());
     const location = escapeHtml((marker.barangay || 'Unknown location').toUpperCase());
@@ -183,6 +176,42 @@ export function CivicMap({
         </div>
       </div>
     `;
+  }
+
+  function formatDateBadge(iso?: string): string {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '—';
+    const month = date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+    return `${month} ${date.getDate()}`;
+  }
+
+  function cleanupPreviewCardHtml(marker: MarkerData, cardId: string): string {
+    const title = escapeHtml((marker.title || 'Cleanup event').toUpperCase());
+    const location = escapeHtml((marker.barangay || 'Community cleanup').toUpperCase());
+    const dateBadge = escapeHtml(formatDateBadge(marker.scheduled_start || marker.created_at || marker.preview_created_at));
+    const subtitle = 'Approved cleanup drive';
+
+    return `
+      <div id="${cardId}" style="width:256px;height:256px;position:relative;border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 18px 40px rgba(0,0,0,0.28);background:linear-gradient(145deg,#0f766e 0%,#134e4a 100%);font-family:Inter,system-ui,-apple-system,sans-serif;">
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.38) 0%,rgba(0,0,0,0.08) 38%,rgba(0,0,0,0.08) 52%,rgba(0,0,0,0.78) 100%);"></div>
+        <div style="position:absolute;top:16px;left:16px;right:16px;font-size:10px;font-weight:600;letter-spacing:0.08em;line-height:1.35;color:rgba(255,255,255,0.95);text-shadow:0 1px 4px rgba(0,0,0,0.55);">${location}</div>
+        <div style="position:absolute;bottom:16px;left:16px;right:16px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;">
+          <div style="min-width:0;padding-right:4px;">
+            <div style="font-size:22px;font-weight:800;line-height:1.05;letter-spacing:0.01em;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,0.5);">${title}</div>
+            <div style="margin-top:8px;font-size:11px;font-weight:500;color:rgba(255,255,255,0.94);text-shadow:0 1px 4px rgba(0,0,0,0.45);">${subtitle}</div>
+          </div>
+          <div style="flex-shrink:0;border-radius:999px;background:rgba(0,0,0,0.62);backdrop-filter:blur(4px);padding:6px 11px;font-size:10px;font-weight:700;letter-spacing:0.05em;color:#fff;">${dateBadge}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function markerPreviewHtml(marker: MarkerData, cardId: string): string {
+    if (marker.type === 'cleanup') {
+      return cleanupPreviewCardHtml(marker, cardId);
+    }
+    return previewCardHtml(marker, cardId);
   }
 
   useEffect(() => {
@@ -502,7 +531,7 @@ export function CivicMap({
       return;
     }
 
-    const markerData = markers.find((item) => item.id === selectedMarkerId && item.type === 'incident');
+    const markerData = markers.find((item) => item.id === selectedMarkerId);
     const marker = markerByIdRef.current.get(selectedMarkerId);
     if (!markerData || !marker) {
       infoWindowRef.current?.close();
@@ -513,7 +542,7 @@ export function CivicMap({
       infoWindowRef.current = new gmaps.InfoWindow({ headerDisabled: true });
     }
     const cardId = `civx-preview-${markerData.id}`;
-    infoWindowRef.current.setContent(previewCardHtml(markerData, cardId));
+    infoWindowRef.current.setContent(markerPreviewHtml(markerData, cardId));
     infoWindowRef.current.open({ map, anchor: marker });
 
     gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', () => {
