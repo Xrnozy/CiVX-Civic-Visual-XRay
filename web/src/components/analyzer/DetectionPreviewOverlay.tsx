@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, type RefObject } from 'react';
 import type { AnalyzerBoundingBox, AnalyzerDetection } from '../../types/analyzer';
 
 export interface OverlayRegion {
@@ -14,12 +14,14 @@ interface DetectionPreviewOverlayProps {
   analyzedWidth?: number | null;
   analyzedHeight?: number | null;
   videoDetections?: AnalyzerDetection[];
+  frameTimestamps?: number[];
   videoRef?: RefObject<HTMLVideoElement | null>;
   onVideoTimeUpdate?: (time: number) => void;
   className?: string;
 }
 
 const BOX_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7'];
+const TIMESTAMP_EPS = 0.2;
 
 function hasValidBox(box: AnalyzerBoundingBox) {
   return box.x2 > box.x1 && box.y2 > box.y1;
@@ -95,6 +97,19 @@ function drawSegmentationRegion(
   ctx.setLineDash([]);
 }
 
+/** Which VLM keyframe is "active" at playback time — sample-and-hold like sparse object detection. */
+export function activeKeyframeTimestamp(keyframes: number[], currentTime: number): number | null {
+  if (!keyframes.length) return null;
+  const sorted = [...keyframes].sort((a, b) => a - b);
+  for (let i = 0; i < sorted.length; i++) {
+    const ts = sorted[i];
+    const start = i === 0 ? 0 : (sorted[i - 1] + ts) / 2;
+    const end = i === sorted.length - 1 ? Infinity : (ts + sorted[i + 1]) / 2;
+    if (currentTime >= start && currentTime < end) return ts;
+  }
+  return sorted[sorted.length - 1];
+}
+
 export function DetectionPreviewOverlay({
   mediaUrl,
   mediaKind,
@@ -102,6 +117,7 @@ export function DetectionPreviewOverlay({
   analyzedWidth,
   analyzedHeight,
   videoDetections,
+  frameTimestamps,
   videoRef: externalVideoRef,
   onVideoTimeUpdate,
   className = '',
@@ -110,93 +126,127 @@ export function DetectionPreviewOverlay({
   const internalVideoRef = useRef<HTMLVideoElement>(null);
   const videoRef = externalVideoRef ?? internalVideoRef;
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [mediaReady, setMediaReady] = useState(false);
-  const [videoTime, setVideoTime] = useState(0);
+  const mediaReadyRef = useRef(false);
+  const lastKeyframeRef = useRef<number | null>(null);
 
-  const activeRegions =
-    mediaKind === 'video' && videoDetections?.length
-      ? regionsForVideoTime(videoDetections, videoTime)
-      : regions;
+  const drawOverlay = useCallback(
+    (currentTime = 0) => {
+      const container = containerRef.current;
+      const canvas = canvasRef.current;
+      const media =
+        mediaKind === 'image'
+          ? (container?.querySelector('img') as HTMLImageElement | null)
+          : videoRef.current;
+      if (!container || !media || !canvas || !mediaReadyRef.current) return;
 
-  const drawOverlay = useCallback(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    const media =
-      mediaKind === 'image'
-        ? (container?.querySelector('img') as HTMLImageElement | null)
-        : videoRef.current;
-    if (!container || !media || !canvas || !mediaReady) return;
+      const naturalWidth =
+        mediaKind === 'image'
+          ? (media as HTMLImageElement).naturalWidth
+          : (media as HTMLVideoElement).videoWidth;
+      const naturalHeight =
+        mediaKind === 'image'
+          ? (media as HTMLImageElement).naturalHeight
+          : (media as HTMLVideoElement).videoHeight;
+      if (!naturalWidth || !naturalHeight) return;
 
-    const naturalWidth =
-      mediaKind === 'image'
-        ? (media as HTMLImageElement).naturalWidth
-        : (media as HTMLVideoElement).videoWidth;
-    const naturalHeight =
-      mediaKind === 'image'
-        ? (media as HTMLImageElement).naturalHeight
-        : (media as HTMLVideoElement).videoHeight;
-    if (!naturalWidth || !naturalHeight) return;
+      const activeRegions =
+        mediaKind === 'video' && videoDetections?.length
+          ? regionsForVideoTime(videoDetections, currentTime, frameTimestamps)
+          : regions;
 
-    const rect = container.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = Math.round(rect.width * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-    canvas.style.width = `${rect.width}px`;
-    canvas.style.height = `${rect.height}px`;
+      const rect = container.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+      canvas.style.width = `${rect.width}px`;
+      canvas.style.height = `${rect.height}px`;
 
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, rect.width, rect.height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, rect.width, rect.height);
 
-    const srcW = analyzedWidth && analyzedWidth > 0 ? analyzedWidth : naturalWidth;
-    const srcH = analyzedHeight && analyzedHeight > 0 ? analyzedHeight : naturalHeight;
-    const { scale, offsetX, offsetY } = computeObjectContainRect(
-      rect.width,
-      rect.height,
-      naturalWidth,
-      naturalHeight,
-    );
+      const srcW = analyzedWidth && analyzedWidth > 0 ? analyzedWidth : naturalWidth;
+      const srcH = analyzedHeight && analyzedHeight > 0 ? analyzedHeight : naturalHeight;
+      const { scale, offsetX, offsetY } = computeObjectContainRect(
+        rect.width,
+        rect.height,
+        naturalWidth,
+        naturalHeight,
+      );
 
-    activeRegions.forEach((region, index) => {
-      if (!hasValidBox(region.box)) return;
-      const naturalBox = scaleBoxToNatural(region.box, srcW, srcH, naturalWidth, naturalHeight);
-      const x = offsetX + naturalBox.x1 * scale;
-      const y = offsetY + naturalBox.y1 * scale;
-      const w = (naturalBox.x2 - naturalBox.x1) * scale;
-      const h = (naturalBox.y2 - naturalBox.y1) * scale;
-      const color = region.color || BOX_COLORS[index % BOX_COLORS.length];
+      activeRegions.forEach((region, index) => {
+        if (!hasValidBox(region.box)) return;
+        const naturalBox = scaleBoxToNatural(region.box, srcW, srcH, naturalWidth, naturalHeight);
+        const x = offsetX + naturalBox.x1 * scale;
+        const y = offsetY + naturalBox.y1 * scale;
+        const w = (naturalBox.x2 - naturalBox.x1) * scale;
+        const h = (naturalBox.y2 - naturalBox.y1) * scale;
+        // #region agent log
+        if (mediaKind === 'video' && index === 0 && Math.floor(currentTime * 2) !== Math.floor((currentTime - 0.01) * 2)) {
+          fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',hypothesisId:'H5',location:'DetectionPreviewOverlay.tsx:drawOverlay',message:'box_drawn',data:{currentTime:Math.round(currentTime*100)/100,box:{x1:region.box.x1,y1:region.box.y1,x2:region.box.x2,y2:region.box.y2},screen:{x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)},srcW,srcH,naturalWidth,naturalHeight},timestamp:Date.now()})}).catch(()=>{});
+        }
+        // #endregion
+        const color = region.color || BOX_COLORS[index % BOX_COLORS.length];
 
-      drawSegmentationRegion(ctx, x, y, w, h, color);
+        drawSegmentationRegion(ctx, x, y, w, h, color);
 
-      if (region.label) {
-        const padding = 6;
-        ctx.font = '600 11px system-ui, sans-serif';
-        const textW = ctx.measureText(region.label).width;
-        const labelH = 18;
-        const labelX = Math.max(offsetX, Math.min(x, rect.width - textW - padding * 2 - 4));
-        const labelY = Math.max(offsetY, y - labelH - 4);
+        if (region.label) {
+          const padding = 6;
+          ctx.font = '600 11px system-ui, sans-serif';
+          const textW = ctx.measureText(region.label).width;
+          const labelH = 18;
+          const labelX = Math.max(offsetX, Math.min(x, rect.width - textW - padding * 2 - 4));
+          const labelY = Math.max(offsetY, y - labelH - 4);
 
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.roundRect(labelX, labelY, textW + padding * 2, labelH, 6);
-        ctx.fill();
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.roundRect(labelX, labelY, textW + padding * 2, labelH, 6);
+          ctx.fill();
 
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(region.label, labelX + padding, labelY + 13);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(region.label, labelX + padding, labelY + 13);
+        }
+      });
+    },
+    [analyzedHeight, analyzedWidth, frameTimestamps, mediaKind, regions, videoDetections, videoRef],
+  );
+
+  const handleVideoTime = useCallback(
+    (t: number) => {
+      const keyTs =
+        frameTimestamps?.length && videoDetections?.length
+          ? activeKeyframeTimestamp(frameTimestamps, t)
+          : null;
+      const keyframeChanged = keyTs !== lastKeyframeRef.current;
+      lastKeyframeRef.current = keyTs;
+
+      // #region agent log
+      if (Math.floor(t * 4) !== Math.floor((t - 0.25) * 4)) {
+        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',hypothesisId:'H3',location:'DetectionPreviewOverlay.tsx:handleVideoTime',message:'playback_tick',data:{t:Math.round(t*100)/100,keyTs,keyframeChanged,redraw:keyframeChanged,detectionCount:videoDetections?.length??0},timestamp:Date.now()})}).catch(()=>{});
       }
-    });
-  }, [activeRegions, analyzedHeight, analyzedWidth, mediaKind, mediaReady, videoRef]);
+      // #endregion
+
+      if (keyframeChanged) {
+        drawOverlay(t);
+      }
+      onVideoTimeUpdate?.(t);
+    },
+    [drawOverlay, frameTimestamps, onVideoTimeUpdate, videoDetections?.length],
+  );
 
   useEffect(() => {
     drawOverlay();
-  }, [drawOverlay, videoTime]);
+  }, [drawOverlay]);
 
   useEffect(() => {
-    const onResize = () => drawOverlay();
+    const onResize = () => {
+      const t = mediaKind === 'video' ? videoRef.current?.currentTime ?? 0 : 0;
+      drawOverlay(t);
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [drawOverlay]);
+  }, [drawOverlay, mediaKind, videoRef]);
 
   return (
     <div ref={containerRef} className={`relative w-full ${className}`}>
@@ -205,7 +255,10 @@ export function DetectionPreviewOverlay({
           src={mediaUrl}
           alt="Preview with detections"
           className="max-h-[min(70vh,560px)] w-full object-contain"
-          onLoad={() => setMediaReady(true)}
+          onLoad={() => {
+            mediaReadyRef.current = true;
+            drawOverlay();
+          }}
         />
       ) : (
         <video
@@ -213,10 +266,18 @@ export function DetectionPreviewOverlay({
           src={mediaUrl}
           controls
           className="max-h-[min(70vh,560px)] w-full object-contain"
-          onLoadedData={() => setMediaReady(true)}
+          onLoadedData={() => {
+            mediaReadyRef.current = true;
+            drawOverlay(videoRef.current?.currentTime ?? 0);
+          }}
           onTimeUpdate={(e) => {
             const t = e.currentTarget.currentTime;
-            setVideoTime(t);
+            handleVideoTime(t);
+          }}
+          onSeeked={(e) => {
+            const t = e.currentTarget.currentTime;
+            lastKeyframeRef.current = null;
+            drawOverlay(t);
             onVideoTimeUpdate?.(t);
           }}
         />
@@ -240,27 +301,37 @@ export function regionsFromDetection(
   }));
 }
 
+/**
+ * Show the VLM box from the active keyframe only — snaps at sample boundaries (YOLO-style hold),
+ * never interpolates between frames.
+ */
 export function regionsForVideoTime(
   detections: AnalyzerDetection[],
   currentTime: number,
+  frameTimestamps?: number[],
 ): OverlayRegion[] {
-  const second = Math.floor(currentTime);
-  const active = detections.filter(
-    (det) =>
-      det.frame_timestamp != null &&
-      Math.floor(det.frame_timestamp) === second &&
-      hasValidBox(det.bounding_box),
+  const valid = detections.filter(
+    (det) => det.frame_timestamp != null && hasValidBox(det.bounding_box),
   );
-  return active.flatMap((det) =>
-    regionsFromDetection(
-      det,
-      `${det.issue_type.replace(/_/g, ' ')} @ ${formatTime(det.frame_timestamp!)}`,
-    ),
-  );
-}
+  if (!valid.length) return [];
 
-function formatTime(seconds: number) {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')}`;
+  const keyframes =
+    frameTimestamps?.length
+      ? frameTimestamps
+      : [...new Set(valid.map((d) => d.frame_timestamp!))];
+
+  const activeTs = activeKeyframeTimestamp(keyframes, currentTime);
+  if (activeTs == null) return [];
+
+  const active = valid.filter(
+    (det) => Math.abs(det.frame_timestamp! - activeTs) < TIMESTAMP_EPS,
+  );
+
+  // #region agent log
+  fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',hypothesisId:'H1-H2-H4',location:'DetectionPreviewOverlay.tsx:regionsForVideoTime',message:'keyframe_snap',data:{currentTime:Math.round(currentTime*100)/100,activeTs,activeCount:active.length,totalDetections:valid.length,keyframes:keyframes.slice(0,8),nearestTs:valid.length?valid.reduce((best,d)=>Math.abs(d.frame_timestamp!-currentTime)<Math.abs(best.frame_timestamp!-currentTime)?d:best).frame_timestamp:null},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
+
+  return active.flatMap((det) =>
+    regionsFromDetection(det, det.issue_type.replace(/_/g, ' ')),
+  );
 }

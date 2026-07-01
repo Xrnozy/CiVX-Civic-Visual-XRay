@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.routers import (
@@ -10,10 +11,26 @@ from app.routers import (
     attendance, ecoquest, passive, driver, maps, analytics, media, ws,
     departments, registration_invites, analyzer,
 )
+from app.services.chunk_queue import get_chunk_queue
 
 limiter = Limiter(key_func=get_remote_address)
 
-app = FastAPI(title="CiVX API", version="1.0.0", description="Civic Visual X-Ray Platform")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    q = get_chunk_queue()
+    q.start()
+    q.recover_pending()
+    yield
+    q.stop()
+
+
+app = FastAPI(
+    title="CiVX API",
+    version="1.0.0",
+    description="Civic Visual X-Ray Platform",
+    lifespan=lifespan,
+)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

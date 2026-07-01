@@ -3,15 +3,19 @@ import tempfile
 import uuid
 from typing import Any
 
-from app.agents.ai_detection import AIDetectionAgent
+from app.agents.analyzer import AnalyzerAgent
 from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.agents.lgu_triage import LGUTriageAgent
 from app.db import get_supabase
+from app.models.civic_issues import PASSIVE_SKIP_INCIDENT_SLUGS
+from app.models.locateanything_worker import get_locateanything_worker
 
 
 class PassiveVideoAgent:
+    """Passive 10s chunk pipeline — VLM detections via AnalyzerAgent (serial queue)."""
+
     def __init__(self):
-        self.ai = AIDetectionAgent()
+        self.analyzer = AnalyzerAgent()
         self.intel = IncidentIntelligenceAgent()
         self.triage = LGUTriageAgent()
 
@@ -22,10 +26,21 @@ class PassiveVideoAgent:
 
         video_path = self._download_chunk(chunk["storage_url"])
         gps_trace = chunk.get("gps_trace_json") or []
-        detections = self.ai.detect_video_chunk(video_path, gps_trace)
+
+        try:
+            get_locateanything_worker()
+            with open(video_path, "rb") as f:
+                video_bytes = f.read()
+            response = self.analyzer.analyze_video(video_bytes, gps_trace=gps_trace, passive_screen=True)
+            detections = response.detections
+        finally:
+            if os.path.exists(video_path):
+                os.remove(video_path)
 
         results = []
         for det in detections:
+            if det.issue_type in PASSIVE_SKIP_INCIDENT_SLUGS:
+                continue
             lat, lng = self._match_gps(gps_trace, det.frame_timestamp or 0)
             rec = self.intel.recommend(lat, lng, det.issue_type, det.confidence)
             if rec.action == "merge" and rec.incident_id:
@@ -39,12 +54,18 @@ class PassiveVideoAgent:
                 inc = self.intel.create_incident(det.issue_type, lat, lng, det.severity_score, "passive")
                 incident_id = inc["id"]
 
+            bbox = {
+                "x1": det.bounding_box.x1,
+                "y1": det.bounding_box.y1,
+                "x2": det.bounding_box.x2,
+                "y2": det.bounding_box.y2,
+            }
             det_row = sb.table("detection_results").insert({
                 "video_chunk_id": chunk_id,
                 "detected_issue_type": det.issue_type,
                 "confidence": det.confidence,
                 "severity_score": det.severity_score,
-                "bounding_box_json": det.bounding_box,
+                "bounding_box_json": bbox,
                 "frame_timestamp": det.frame_timestamp,
                 "matched_latitude": lat,
                 "matched_longitude": lng,
@@ -54,8 +75,6 @@ class PassiveVideoAgent:
             results.append(det_row)
 
         sb.table("video_chunks").update({"processing_status": "completed"}).eq("id", chunk_id).execute()
-        if os.path.exists(video_path):
-            os.remove(video_path)
         return {"chunk_id": chunk_id, "detections": results}
 
     def _match_gps(self, trace: list, timestamp: float) -> tuple[float, float]:

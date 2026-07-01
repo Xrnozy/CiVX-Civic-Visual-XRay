@@ -14,7 +14,8 @@ from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.config import settings
 from app.models.civic_issues import (
     CIVIC_DETECT_LABELS,
-    PASSIVE_VIDEO_GROUND_PHRASE,
+    PASSIVE_VIDEO_DETECT_LABELS,
+    PASSIVE_SKIP_INCIDENT_SLUGS,
     compute_severity,
     infer_issue_type_from_answer,
     phrase_for_issue,
@@ -64,7 +65,13 @@ class AnalyzerAgent:
             "verbose": False,
         }
 
-    def _video_predict_kwargs(self) -> dict[str, Any]:
+    def _video_predict_kwargs(self, *, passive_screen: bool = False) -> dict[str, Any]:
+        if passive_screen:
+            return {
+                "generation_mode": settings.locateanything_video_generation_mode,
+                "max_new_tokens": settings.passive_video_max_new_tokens,
+                "verbose": False,
+            }
         return {
             "generation_mode": settings.locateanything_video_generation_mode,
             "max_new_tokens": settings.locateanything_video_max_new_tokens,
@@ -102,8 +109,8 @@ class AnalyzerAgent:
         if issue_type:
             phrase = phrase_for_issue(issue_type)
             for name, run in (
-                ("ground_multi", lambda: worker.ground_multi(image, phrase, **kwargs)),
                 ("ground_single", lambda: worker.ground_single(image, phrase, **kwargs)),
+                ("ground_multi", lambda: worker.ground_multi(image, phrase, **kwargs)),
             ):
                 passes.append(name)
                 last_result = run()
@@ -184,20 +191,25 @@ class AnalyzerAgent:
         self,
         worker: LocateAnythingWorker,
         image: Image.Image,
+        *,
+        passive_screen: bool = False,
     ) -> dict[str, Any]:
-        """Passive video path: one fast ground_single pass per frame (spec: 10s chunks)."""
-        kwargs = self._video_predict_kwargs()
+        """Video keyframe: one detect() pass screens all civic hazard categories."""
+        kwargs = self._video_predict_kwargs(passive_screen=passive_screen)
+        labels = PASSIVE_VIDEO_DETECT_LABELS if passive_screen else CIVIC_DETECT_LABELS
         t0 = time.perf_counter()
-        result = worker.ground_single(image, PASSIVE_VIDEO_GROUND_PHRASE, **kwargs)
+        result = worker.detect(image, labels, **kwargs)
         width, height = image.size
         raw = LocateAnythingWorker.parse_boxes(str(result.get("answer", "")), width, height)
         filtered = self._filter_boxes(raw, width, height)
         _debug_log(
             "H2",
             "analyzer.py:_run_grounding_video",
-            "passive_frame",
+            "passive_screen",
             {
-                "passes": ["ground_single"],
+                "passes": ["detect"],
+                "passive_screen": passive_screen,
+                "label_count": len(labels),
                 "elapsed_ms": round((time.perf_counter() - t0) * 1000),
                 "raw_box_count": len(raw),
                 "filtered_box_count": len(filtered),
@@ -205,6 +217,13 @@ class AnalyzerAgent:
                 "max_new_tokens": kwargs["max_new_tokens"],
             },
         )
+        if not filtered and passive_screen:
+            return result
+        if not filtered:
+            phrase = infer_issue_type_from_answer(str(result.get("answer", "")), None)
+            retry = worker.ground_single(image, phrase_for_issue(phrase), **kwargs)
+            if self._has_boxes(image, retry):
+                return retry
         return result
 
     def analyze_image(
@@ -215,7 +234,24 @@ class AnalyzerAgent:
         longitude: float | None = None,
         issue_type: str | None = None,
     ) -> AnalyzerImageResponse:
-        image = self._prepare_image(image_bytes)
+        from app.services.gpu_queue import run_gpu_job
+
+        return run_gpu_job(
+            lambda: self._analyze_image_impl(
+                image_bytes, filename, latitude, longitude, issue_type
+            ),
+            label="analyzer_image",
+        )
+
+    def _analyze_image_impl(
+        self,
+        image_bytes: bytes,
+        filename: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        issue_type: str | None = None,
+    ) -> AnalyzerImageResponse:
+        image = self._prepare_image(image_bytes, max_side=settings.locateanything_image_max_side)
         worker = self._worker()
 
         result = self._run_grounding(worker, image, issue_type)
@@ -244,13 +280,39 @@ class AnalyzerAgent:
         video_bytes: bytes,
         filename: str | None = None,
         gps_trace: list[dict[str, Any]] | None = None,
+        *,
+        passive_screen: bool = False,
+    ) -> AnalyzerVideoResponse:
+        from app.services.gpu_queue import run_gpu_job
+
+        label = "passive_chunk" if passive_screen else "analyzer_video"
+        return run_gpu_job(
+            lambda: self._analyze_video_impl(
+                video_bytes, filename, gps_trace, passive_screen=passive_screen
+            ),
+            label=label,
+        )
+
+    def _analyze_video_impl(
+        self,
+        video_bytes: bytes,
+        filename: str | None = None,
+        gps_trace: list[dict[str, Any]] | None = None,
+        *,
+        passive_screen: bool = False,
     ) -> AnalyzerVideoResponse:
         local_path = self._write_temp(video_bytes, filename, default_suffix=".mp4")
         try:
+            sample_fps = (
+                settings.passive_video_sample_fps if passive_screen else settings.locateanything_video_sample_fps
+            )
+            max_frames = (
+                settings.passive_video_max_frames if passive_screen else settings.locateanything_video_max_frames
+            )
             frame_pairs = self._extract_frames(
                 local_path,
-                fps=settings.locateanything_video_sample_fps,
-                max_frames=settings.locateanything_video_max_frames,
+                fps=sample_fps,
+                max_frames=max_frames,
             )
             # #region agent log
             _debug_log(
@@ -271,10 +333,16 @@ class AnalyzerAgent:
             detections: list[AnalyzerDetection] = []
             video_t0 = time.perf_counter()
 
+            max_side = (
+                settings.passive_video_max_side if passive_screen else settings.locateanything_video_max_side
+            )
             for frame_path, ts in frame_pairs:
                 frame_t0 = time.perf_counter()
-                image = self._prepare_image(open(frame_path, "rb").read())
-                result = self._run_grounding_video(worker, image)
+                image = self._prepare_image(
+                    open(frame_path, "rb").read(),
+                    max_side=max_side,
+                )
+                result = self._run_grounding_video(worker, image, passive_screen=passive_screen)
                 det = self._result_to_detection(image, result, video_mode=True)
                 width, height = image.size
                 det = det.model_copy(update={"image_width": width, "image_height": height})
@@ -322,7 +390,25 @@ class AnalyzerAgent:
                 },
             )
             # #endregion
-            return AnalyzerVideoResponse(detections=detections, frames_analyzed=len(frame_pairs))
+            # #region agent log
+            _debug_log(
+                "H1",
+                "analyzer.py:analyze_video",
+                "detection_density",
+                {
+                    "vlm_keyframes": len(frame_pairs),
+                    "detections_returned": len(detections),
+                    "per_second_density": round(len(detections) / max(0.001, (frame_pairs[-1][1] if frame_pairs else 1)), 2),
+                    "sample_timestamps": [round(ts, 2) for _, ts in frame_pairs],
+                },
+            )
+            # #endregion
+            return AnalyzerVideoResponse(
+                detections=detections,
+                frames_analyzed=len(frame_pairs),
+                frame_timestamps=[round(ts, 3) for _, ts in frame_pairs],
+                sample_fps=sample_fps if passive_screen else settings.locateanything_video_sample_fps,
+            )
         finally:
             self._cleanup(local_path)
 
@@ -383,32 +469,46 @@ class AnalyzerAgent:
     @staticmethod
     def _extract_frames(
         video_path: str,
-        fps: float = 0.33,
+        fps: float = 0.5,
         max_frames: int = 4,
     ) -> list[tuple[str, float]]:
+        """Seek to target timestamps instead of decoding the full video."""
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             return []
         video_fps = cap.get(cv2.CAP_PROP_FPS) or 30
-        interval = max(1, int(video_fps / max(fps, 0.1)))
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        duration = frame_count / video_fps if frame_count > 0 else 0
+
+        interval_sec = 1.0 / max(fps, 0.1)
+        timestamps: list[float] = []
+        t = 0.0
+        while t <= duration + 1e-6:
+            timestamps.append(round(t, 3))
+            t += interval_sec
+        if not timestamps:
+            timestamps = [0.0]
+
+        if max_frames == 1:
+            timestamps = [round((duration / 2) if duration > 0 else 0.0, 3)]
+        elif len(timestamps) > max_frames:
+            step = (len(timestamps) - 1) / max(1, max_frames - 1)
+            timestamps = [timestamps[int(round(i * step))] for i in range(max_frames)]
+
         frames: list[tuple[str, float]] = []
-        frame_num = 0
-        while True:
+        for ts in timestamps:
+            cap.set(cv2.CAP_PROP_POS_MSEC, ts * 1000)
             ret, frame = cap.read()
             if not ret:
-                break
-            if frame_num % interval == 0:
-                ts = frame_num / video_fps
-                path = os.path.join(tempfile.gettempdir(), f"civx_la_frame_{uuid.uuid4().hex}.jpg")
-                cv2.imwrite(path, frame)
-                frames.append((path, ts))
-            frame_num += 1
+                cap.set(cv2.CAP_PROP_POS_FRAMES, int(ts * video_fps))
+                ret, frame = cap.read()
+            if not ret:
+                continue
+            path = os.path.join(tempfile.gettempdir(), f"civx_la_frame_{uuid.uuid4().hex}.jpg")
+            cv2.imwrite(path, frame, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+            frames.append((path, ts))
         cap.release()
-
-        if len(frames) <= max_frames:
-            return frames
-        step = len(frames) / max_frames
-        return [frames[int(i * step)] for i in range(max_frames)]
+        return frames
 
     @staticmethod
     def _match_gps(trace: list[dict[str, Any]], timestamp: float) -> tuple[float, float]:

@@ -11,6 +11,7 @@ interface AnalyzerPreviewHeroProps {
   detectionWidth?: number | null;
   detectionHeight?: number | null;
   videoDetections: AnalyzerDetection[];
+  frameTimestamps?: number[];
   videoRef: RefObject<HTMLVideoElement | null>;
   onVideoTimeUpdate?: (time: number) => void;
 }
@@ -24,6 +25,7 @@ export function AnalyzerPreviewHero({
   detectionWidth,
   detectionHeight,
   videoDetections,
+  frameTimestamps,
   videoRef,
   onVideoTimeUpdate,
 }: AnalyzerPreviewHeroProps) {
@@ -34,7 +36,7 @@ export function AnalyzerPreviewHero({
           <p className="text-sm text-body-muted">Upload a photo or video to preview</p>
         </div>
         <p className="mx-auto mt-3 max-w-5xl text-center text-xs text-ink-muted-48">
-          Passive video uses 1 fps sampling (up to 10 seconds per chunk).
+          Passive video: VLM runs at 1 fps (up to 6 keyframes) — boxes snap to each real detection.
         </p>
       </section>
     );
@@ -51,6 +53,7 @@ export function AnalyzerPreviewHero({
             analyzedWidth={imageResult?.image_width ?? detectionWidth}
             analyzedHeight={imageResult?.image_height ?? detectionHeight}
             videoDetections={isVideo ? videoDetections : undefined}
+            frameTimestamps={isVideo ? frameTimestamps : undefined}
             videoRef={videoRef}
             onVideoTimeUpdate={onVideoTimeUpdate}
             className="min-h-[min(70vh,560px)]"
@@ -73,7 +76,7 @@ export function AnalyzerPreviewHero({
       </div>
       <p className="mx-auto mt-3 max-w-5xl text-center text-xs text-ink-muted-48">
         {isVideo
-          ? 'Boxes appear for the current whole second (0s, 1s, 2s…). Use the timeline in Results to jump.'
+          ? 'Boxes update at each VLM keyframe (like sparse object detection) — no fake sliding.'
           : 'Segmentation highlight inside detected bounding boxes after analysis.'}
       </p>
     </section>

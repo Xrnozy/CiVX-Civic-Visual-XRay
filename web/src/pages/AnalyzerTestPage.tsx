@@ -144,6 +144,31 @@ export default function AnalyzerTestPage() {
     }
   }
 
+  useEffect(() => {
+    if (!analyzing) return;
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/analyzer/queue/status');
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          gpu?: { waiting_jobs?: number; current_job?: string | null; gpu_busy?: boolean };
+        };
+        const wait = data.gpu?.waiting_jobs ?? 0;
+        const job = data.gpu?.current_job;
+        if (wait > 0) {
+          setProgress(`Waiting for GPU (${wait} job(s) ahead)…`);
+        } else if (job) {
+          setProgress(`GPU busy: ${job.replace(/_/g, ' ')}…`);
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    void poll();
+    const id = window.setInterval(poll, 2000);
+    return () => window.clearInterval(id);
+  }, [analyzing]);
+
   async function analyze() {
     if (!file || !modelLoaded) return;
     if (!user) {
@@ -157,7 +182,7 @@ export default function AnalyzerTestPage() {
     setPlaybackSecond(0);
     setProgress(
       isVideo
-        ? 'Passive scan: 1 frame per second (up to 10s), one fast inference per second.'
+        ? 'Queued GPU scan — one video at a time on this machine (no parallel overload).'
         : 'Running inference on GPU — typically 30–120 seconds per image.',
     );
 
@@ -244,7 +269,7 @@ export default function AnalyzerTestPage() {
       <GlobalNav />
       <SubNavFrosted
         title="Scene analyzer"
-        lead="Passive video: 1 bounding-box set per second · images use full grounding"
+        lead="Passive video: screens 19 civic hazard types per keyframe · images use full grounding"
         action={
           <ButtonPrimary type="button" onClick={loadGpuModel} disabled={modelLoading || modelLoaded}>
             {modelLoaded ? 'GPU model ready' : modelLoading ? 'Loading GPU model…' : 'Load GPU model'}
@@ -299,6 +324,7 @@ export default function AnalyzerTestPage() {
         detectionWidth={detection?.image_width}
         detectionHeight={detection?.image_height}
         videoDetections={videoDetections}
+        frameTimestamps={videoResult?.frame_timestamps}
         videoRef={videoRef}
         onVideoTimeUpdate={(t) => setPlaybackSecond(Math.floor(t))}
       />
@@ -331,8 +357,7 @@ export default function AnalyzerTestPage() {
 
             {isVideo && (
               <p className="rounded-[12px] bg-canvas-parchment px-4 py-3 text-sm text-ink-muted-80">
-                Passive mode: samples at <strong>1 fps</strong> (up to 10 seconds per chunk). Sky and tiny false boxes
-                are filtered out.
+                Passive mode (queue): <strong>1 detect() pass</strong> screens all 19 hazard categories per keyframe (3 keyframes / 10s chunk). Cleanup events are not auto-flagged.
               </p>
             )}
 

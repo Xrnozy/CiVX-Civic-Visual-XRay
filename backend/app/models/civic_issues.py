@@ -22,8 +22,10 @@ CIVIC_ISSUE_PROMPTS: dict[str, str] = {
     "road_obstruction": "road obstruction or object blocking traffic",
     "damaged_traffic_sign": "damaged traffic sign or broken road sign",
     "unsafe_public_area": "unsafe public area hazard",
+    "cleanup_event": "community cleanup event or organized cleanup activity",
 }
 
+# Labels for LocateAnything detect() — one pass screens all civic hazards in a frame.
 CIVIC_DETECT_LABELS: list[str] = [
     "garbage pile",
     "scattered trash",
@@ -32,8 +34,10 @@ CIVIC_DETECT_LABELS: list[str] = [
     "pothole",
     "broken road",
     "road crack",
+    "uneven road",
     "flooded area",
     "dirty canal",
+    "dirty river",
     "clogged drainage",
     "broken sidewalk",
     "broken streetlight",
@@ -41,10 +45,11 @@ CIVIC_DETECT_LABELS: list[str] = [
     "fallen tree",
     "road obstruction",
     "damaged traffic sign",
+    "unsafe public area",
 ]
 
-# Targeted phrase for passive video chunks (~10s). Avoids multi-category detect() hallucinations.
-PASSIVE_VIDEO_GROUND_PHRASE = "garbage pile, litter, or accumulated trash on the ground near the street"
+# Passive 10s chunks: screen hazards only (cleanup_event is scheduled, not auto-detected).
+PASSIVE_VIDEO_DETECT_LABELS: list[str] = list(CIVIC_DETECT_LABELS)
 
 # Kept for reference; do not pass this long list to ground_multi — model returns <box>None</box>.
 CIVIC_SCENE_PROMPT = (
@@ -62,6 +67,7 @@ _REF_ALIASES: list[tuple[str, str]] = [
     ("garbage piles", "garbage_pile"),
     ("accumulated trash", "garbage_pile"),
     ("open manhole", "open_manhole"),
+    ("missing manhole cover", "open_manhole"),
     ("broken streetlight", "broken_streetlight"),
     ("damaged streetlight", "broken_streetlight"),
     ("broken sidewalk", "broken_sidewalk"),
@@ -74,9 +80,13 @@ _REF_ALIASES: list[tuple[str, str]] = [
     ("flooded area", "flooding"),
     ("flooded areas", "flooding"),
     ("standing flood", "flooding"),
+    ("uneven road", "uneven_road"),
+    ("sunken pavement", "uneven_road"),
     ("road crack", "road_crack"),
     ("broken road", "broken_road"),
     ("damaged traffic sign", "damaged_traffic_sign"),
+    ("unsafe public area", "unsafe_public_area"),
+    ("cleanup event", "cleanup_event"),
     ("pothole", "pothole"),
     ("potholes", "pothole"),
 ]
@@ -88,12 +98,18 @@ ISSUE_SEVERITY_WEIGHT: dict[str, float] = {
     "illegal_dumping": 0.85,
     "pothole": 0.8,
     "broken_road": 0.8,
+    "uneven_road": 0.75,
     "road_obstruction": 0.75,
     "clogged_drainage": 0.7,
     "garbage_pile": 0.65,
-    "scattered_trash": 0.5,
+    "dirty_river": 0.55,
     "dirty_canal": 0.55,
+    "scattered_trash": 0.5,
+    "cleanup_event": 0.3,
 }
+
+# Slugs the passive queue should not auto-create incidents for.
+PASSIVE_SKIP_INCIDENT_SLUGS: frozenset[str] = frozenset({"cleanup_event"})
 
 
 def phrase_for_issue(issue_type: str) -> str:

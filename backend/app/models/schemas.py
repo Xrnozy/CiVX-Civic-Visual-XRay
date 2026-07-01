@@ -187,3 +187,5 @@ class AnalyzerImageResponse(BaseModel):
 class AnalyzerVideoResponse(BaseModel):
     detections: list[AnalyzerDetection]
     frames_analyzed: int
+    frame_timestamps: list[float] = []
+    sample_fps: float = 1.0

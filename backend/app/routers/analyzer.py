@@ -86,6 +86,18 @@ async def analyze_image(
         raise HTTPException(status_code=500, detail=f"Image analysis failed: {exc}") from exc
 
 
+@router.get("/queue/status")
+def analyzer_queue_status():
+    """GPU job queue — all analyzer + passive inference serializes here."""
+    from app.services.chunk_queue import get_chunk_queue
+    from app.services.gpu_queue import status as gpu_status
+
+    return {
+        "gpu": gpu_status(),
+        "passive_chunks": get_chunk_queue().status(),
+    }
+
+
 @router.post("/video", response_model=AnalyzerVideoResponse)
 async def analyze_video(
     video: UploadFile = File(...),

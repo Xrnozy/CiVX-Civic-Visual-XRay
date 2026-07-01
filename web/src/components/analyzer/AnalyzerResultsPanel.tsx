@@ -36,23 +36,25 @@ export function AnalyzerResultsPanel({
   const detection = imageResult?.detection;
   const videoDetections = videoResult?.detections ?? [];
 
-  const videoSeconds = useMemo(() => {
+  const videoKeyframes = useMemo(() => {
     if (!videoResult) return [];
+    if (videoResult.frame_timestamps?.length) {
+      return [...videoResult.frame_timestamps].sort((a, b) => a - b);
+    }
     const seconds = new Set<number>();
-    for (let i = 0; i < videoResult.frames_analyzed; i++) seconds.add(i);
     for (const det of videoDetections) {
-      if (det.frame_timestamp != null) seconds.add(Math.floor(det.frame_timestamp));
+      if (det.frame_timestamp != null) seconds.add(Math.round(det.frame_timestamp * 10) / 10);
     }
     return Array.from(seconds).sort((a, b) => a - b);
   }, [videoResult, videoDetections]);
 
-  const detectionsBySecond = useMemo(() => {
+  const detectionsByKeyframe = useMemo(() => {
     const map = new Map<number, AnalyzerDetection[]>();
     for (const det of videoDetections) {
-      const s = Math.floor(det.frame_timestamp ?? 0);
-      const list = map.get(s) ?? [];
+      const key = Math.round((det.frame_timestamp ?? 0) * 10) / 10;
+      const list = map.get(key) ?? [];
       list.push(det);
-      map.set(s, list);
+      map.set(key, list);
     }
     return map;
   }, [videoDetections]);
@@ -86,7 +88,7 @@ export function AnalyzerResultsPanel({
       {(imageResult || videoResult) && !analyzing && (
         <div className="grid gap-3 sm:grid-cols-3">
           <StatCard
-            label={videoResult ? 'Seconds sampled' : 'Analysis'}
+            label={videoResult ? 'Keyframes' : 'Analysis'}
             value={videoResult ? videoResult.frames_analyzed : 'Image'}
           />
           <StatCard
@@ -141,11 +143,11 @@ export function AnalyzerResultsPanel({
           {videoDetections.length === 0 && (
             <p className="text-sm text-ink-muted-48">No detections in this clip.</p>
           )}
-          {videoSeconds.length > 0 && (
+          {videoKeyframes.length > 0 && (
             <div className="flex flex-wrap gap-2 rounded-full border border-hairline bg-canvas-parchment p-1">
-              {videoSeconds.map((sec) => {
-                const hits = detectionsBySecond.get(sec) ?? [];
-                const active = playbackSecond === sec;
+              {videoKeyframes.map((sec) => {
+                const hits = detectionsByKeyframe.get(sec) ?? [];
+                const active = Math.abs(playbackSecond - sec) < 0.5;
                 return (
                   <button
                     key={sec}
@@ -170,7 +172,7 @@ export function AnalyzerResultsPanel({
               <li
                 key={`${det.frame_timestamp ?? index}-${det.issue_type}`}
                 className="flex cursor-pointer items-center justify-between rounded-[12px] border border-hairline bg-canvas-parchment px-3 py-2 text-sm hover:border-primary/30"
-                onClick={() => det.frame_timestamp != null && onSeekSecond(Math.floor(det.frame_timestamp))}
+                onClick={() => det.frame_timestamp != null && onSeekSecond(det.frame_timestamp)}
               >
                 <span className="font-medium capitalize">{formatLabel(det.issue_type)}</span>
                 <span className="font-mono text-xs text-ink-muted-48">

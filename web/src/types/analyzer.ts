@@ -37,6 +37,8 @@ export interface AnalyzerImageResponse {
 export interface AnalyzerVideoResponse {
   detections: AnalyzerDetection[];
   frames_analyzed: number;
+  frame_timestamps?: number[];
+  sample_fps?: number;
 }
 
 export interface AnalyzerStatus {

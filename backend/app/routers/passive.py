@@ -1,10 +1,11 @@
 import uuid
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
 
-from app.agents.passive_video import PassiveVideoAgent
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
 from app.auth.firebase import AuthUser, get_current_user, require_roles
 from app.db import get_supabase
 from app.models.schemas import RouteSessionCreate
+from app.services.chunk_queue import get_chunk_queue
 
 router = APIRouter(prefix="/api/passive", tags=["passive"])
 
@@ -218,10 +219,15 @@ def end_session(session_id: str, user: AuthUser = Depends(get_current_user)):
     return {"status": "completed"}
 
 
+@router.get("/queue/status")
+def queue_status(user: AuthUser = Depends(require_roles(*WORKER_READ))):
+    """Worker queue depth — safe to poll while uploading many 10s chunks."""
+    return get_chunk_queue().status()
+
+
 @router.post("/sessions/{session_id}/chunks")
 async def upload_chunk(
     session_id: str,
-    background_tasks: BackgroundTasks,
     chunk_index: int = Form(...),
     start_time: str = Form(...),
     end_time: str = Form(...),
@@ -250,15 +256,6 @@ async def upload_chunk(
     sb.table("passive_route_sessions").update({
         "total_chunks": chunk_index + 1,
     }).eq("id", session_id).execute()
-    background_tasks.add_task(_process_chunk, chunk["id"])
+    get_chunk_queue().enqueue(chunk["id"])
     return chunk
 
-
-def _process_chunk(chunk_id: str):
-    from app.db import get_supabase
-
-    try:
-        PassiveVideoAgent().process_chunk(chunk_id)
-    except Exception:
-        sb = get_supabase()
-        sb.table("video_chunks").update({"processing_status": "failed"}).eq("id", chunk_id).execute()
