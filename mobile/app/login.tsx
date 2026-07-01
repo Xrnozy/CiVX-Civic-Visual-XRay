@@ -59,7 +59,7 @@ async function completeRegistration(payload: {
 }
 
 function homeForRole(role: string) {
-  if (role === 'street_sweeper') return '/passive';
+  if (role === 'street_sweeper') return '/(tabs)/camera';
   return '/';
 }
 
