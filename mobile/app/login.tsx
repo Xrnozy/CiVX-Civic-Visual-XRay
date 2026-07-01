@@ -1,11 +1,15 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform } from 'react-native';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase';
 import { api } from '../lib/api';
 import { router, useLocalSearchParams } from 'expo-router';
 import { colors, productShadow, radii, type } from '../styles/theme';
+
+WebBrowser.maybeCompleteAuthSession();
 
 type Mode = 'signin' | 'register';
 type AccountType = 'citizen' | 'organizer' | 'street_sweeper';
@@ -31,6 +35,13 @@ const PUBLIC_WORKER_TYPES: Record<PublicWorkerType, string> = {
   barangay_worker: 'Barangay worker',
   lgu_vehicle_operator: 'LGU vehicle operator',
   patrol: 'Patrol / security',
+};
+
+const GOOGLE_CLIENT_IDS = {
+  expoClientId: process.env.EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID,
+  androidClientId: process.env.EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID,
+  iosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID,
+  webClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID,
 };
 
 function authErrorMessage(err: unknown): string {
@@ -78,6 +89,14 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest(GOOGLE_CLIENT_IDS);
+  const hasGoogleButton =
+    Platform.OS === 'web'
+    || Boolean(
+      GOOGLE_CLIENT_IDS.expoClientId
+      || GOOGLE_CLIENT_IDS.webClientId
+      || (Platform.OS === 'android' ? GOOGLE_CLIENT_IDS.androidClientId : GOOGLE_CLIENT_IDS.iosClientId),
+    );
 
   useEffect(() => {
     if (!inviteToken) return;
@@ -87,6 +106,31 @@ export default function LoginScreen() {
       })
       .catch(() => undefined);
   }, [inviteToken]);
+
+  useEffect(() => {
+    if (googleResponse?.type !== 'success') return;
+    const idToken = googleResponse.params.id_token;
+    if (!idToken) {
+      Alert.alert('Google sign-in failed', 'Google did not return an ID token. Check the configured OAuth client IDs.');
+      setLoading(false);
+      return;
+    }
+
+    const finishGoogleSignIn = async () => {
+      try {
+        const credential = GoogleAuthProvider.credential(idToken);
+        const cred = await signInWithCredential(getFirebaseAuth(), credential);
+        const token = await cred.user.getIdToken(true);
+        await afterAuth(token, mode === 'register');
+      } catch (err) {
+        Alert.alert('Google sign-in failed', authErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void finishGoogleSignIn();
+  }, [googleResponse]);
 
   async function afterAuth(token: string, isRegister: boolean) {
     await AsyncStorage.setItem('civx_token', token);
@@ -153,15 +197,15 @@ export default function LoginScreen() {
       Alert.alert('Firebase not configured', 'Set EXPO_PUBLIC_FIREBASE_* in infra/.env');
       return;
     }
-    if (Platform.OS !== 'web') {
-      Alert.alert(
-        'Google sign-in setup needed',
-        'The button is matched to the web app. Native Google sign-in needs Expo AuthSession client IDs before it can complete on iOS or Android.',
-      );
-      return;
-    }
     if (mode === 'register' && !accountType) {
       Alert.alert('Select account type', 'Choose how you will use CiVX before continuing with Google.');
+      return;
+    }
+    if (Platform.OS !== 'web') {
+      if (!googleRequest) return;
+      setLoading(true);
+      const result = await promptGoogleAsync();
+      if (result.type !== 'success') setLoading(false);
       return;
     }
     try {
@@ -194,16 +238,24 @@ export default function LoginScreen() {
         </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.googleButton} onPress={submitGoogle} disabled={loading}>
-        <Text style={styles.googleMark}>G</Text>
-        <Text style={styles.googleText}>Continue with Google</Text>
-      </TouchableOpacity>
+      {hasGoogleButton && (
+        <>
+          <TouchableOpacity
+            style={styles.googleButton}
+            onPress={submitGoogle}
+            disabled={loading || (Platform.OS !== 'web' && !googleRequest)}
+          >
+            <Text style={styles.googleMark}>G</Text>
+            <Text style={styles.googleText}>Continue with Google</Text>
+          </TouchableOpacity>
 
-      <View style={styles.dividerRow}>
-        <View style={styles.divider} />
-        <Text style={styles.dividerText}>or use email</Text>
-        <View style={styles.divider} />
-      </View>
+          <View style={styles.dividerRow}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>or use email</Text>
+            <View style={styles.divider} />
+          </View>
+        </>
+      )}
 
       {mode === 'register' && !accountType && (
         <View style={styles.section}>

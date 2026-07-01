@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
+import { View, Text, FlatList, StyleSheet, TouchableOpacity } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { router } from 'expo-router';
 import { api } from '../../lib/api';
 import { colors, productShadow, radii, type } from '../../styles/theme';
 import ProfileAvatarButton from '../../components/ProfileAvatarButton';
@@ -8,6 +10,10 @@ interface Task {
   id: string;
   title: string;
   task_type: string;
+  description?: string;
+  barangay?: string;
+  reward_type?: string;
+  status?: string;
 }
 
 export default function EcoQuestScreen() {
@@ -37,11 +43,25 @@ export default function EcoQuestScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{item.title}</Text>
-            <Text style={styles.meta}>{item.task_type}</Text>
-            <View style={styles.badge}><Text style={styles.badgeText}>Open</Text></View>
-          </View>
+          <TouchableOpacity
+            style={styles.card}
+            activeOpacity={0.86}
+            onPress={() => router.push({ pathname: '/ecoquest-detail', params: { id: item.id } })}
+          >
+            <View style={styles.taskVisual}>
+              <Ionicons name="sparkles" size={28} color={colors.primaryOnDark} />
+              <Text style={styles.taskVisualText}>{item.task_type.replace(/_/g, ' ')}</Text>
+            </View>
+            <View style={styles.cardBody}>
+              <Text style={styles.cardTitle}>{item.title}</Text>
+              <Text style={styles.meta}>{item.barangay || 'Nearby community task'}</Text>
+              {item.description ? <Text style={styles.description} numberOfLines={2}>{item.description}</Text> : null}
+              <View style={styles.cardFooter}>
+                <View style={styles.badge}><Text style={styles.badgeText}>{item.status || 'Open'}</Text></View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </View>
+            </View>
+          </TouchableOpacity>
         )}
       />
     </View>
@@ -55,10 +75,15 @@ const styles = StyleSheet.create({
   eyebrow: { ...type.eyebrow, color: colors.primaryOnDark },
   title: { fontSize: 28, fontWeight: '600', color: colors.canvas, marginTop: 8, lineHeight: 34 },
   subtitle: { fontSize: 15, color: colors.bodyMuted, marginTop: 8, lineHeight: 22 },
-  card: { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.card, padding: 18, marginBottom: 12 },
+  card: { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.card, marginBottom: 14, overflow: 'hidden' },
+  taskVisual: { height: 132, backgroundColor: colors.tileDark, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  taskVisualText: { color: colors.canvas, fontSize: 13, fontWeight: '700', textTransform: 'capitalize' },
+  cardBody: { padding: 18 },
   cardTitle: { fontSize: 17, fontWeight: '700', color: colors.ink },
   meta: { fontSize: 14, color: colors.muted, marginTop: 6, lineHeight: 20, textTransform: 'capitalize' },
-  badge: { alignSelf: 'flex-start', backgroundColor: colors.ink, borderRadius: radii.pill, paddingVertical: 6, paddingHorizontal: 10, marginTop: 12 },
+  description: { fontSize: 14, color: colors.ink80, marginTop: 8, lineHeight: 20 },
+  cardFooter: { marginTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  badge: { alignSelf: 'flex-start', backgroundColor: colors.ink, borderRadius: radii.pill, paddingVertical: 6, paddingHorizontal: 10 },
   badgeText: { color: '#fff', fontSize: 12, fontWeight: '600' },
   emptyCard: { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.card, padding: 18 },
   emptyTitle: { color: colors.ink, fontSize: 17, fontWeight: '700' },

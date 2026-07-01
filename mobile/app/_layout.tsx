@@ -14,7 +14,8 @@ export default function RootLayout() {
       <Stack.Screen name="(tabs)" />
       <Stack.Screen name="login" options={{ ...headerOptions, headerShown: true, title: 'Sign in' }} />
       <Stack.Screen name="report" options={{ ...headerOptions, headerShown: true, title: 'Report issue' }} />
-      <Stack.Screen name="event-detail" options={{ ...headerOptions, headerShown: true, title: 'Event check-in' }} />
+      <Stack.Screen name="event-detail" options={{ ...headerOptions, headerShown: true, title: 'Event details' }} />
+      <Stack.Screen name="ecoquest-detail" options={{ ...headerOptions, headerShown: true, title: 'EcoQuest task' }} />
       <Stack.Screen name="passive" options={{ ...headerOptions, headerShown: true, title: 'Passive recording' }} />
       <Stack.Screen name="driver" options={{ ...headerOptions, headerShown: true, title: 'Driver dashcam' }} />
     </Stack>

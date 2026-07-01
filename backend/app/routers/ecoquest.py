@@ -20,6 +20,12 @@ def list_tasks(status: str | None = None):
     return q.order("created_at", desc=True).execute().data
 
 
+@router.get("/tasks/{task_id}")
+def get_task(task_id: str):
+    sb = get_supabase()
+    return sb.table("ecoquest_tasks").select("*").eq("id", task_id).single().execute().data
+
+
 @router.post("/tasks")
 def create_task(body: EcoQuestTaskCreate, user: AuthUser = Depends(require_roles(*LGU))):
     sb = get_supabase()
