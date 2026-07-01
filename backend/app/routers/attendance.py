@@ -45,6 +45,92 @@ def volunteer_hours(user_id: str, user: AuthUser = Depends(require_roles(*MONITO
     return att.cumulative_hours(user_id)
 
 
+@router.get("/me")
+def my_attendance(user: AuthUser = Depends(get_current_user)):
+    sb = get_supabase()
+    records = (
+        sb.table("attendance_records")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", desc=True)
+        .limit(100)
+        .execute()
+        .data
+        or []
+    )
+    if not records:
+        return {"events": [], "certificates": [], "summary": {"total_events": 0, "verified_events": 0, "total_verified_hours": 0}}
+
+    event_ids = [record["event_id"] for record in records]
+    events = (
+        sb.table("cleanup_events")
+        .select("id,title,barangay,scheduled_start,scheduled_end,approval_status")
+        .in_("id", event_ids)
+        .execute()
+        .data
+        or []
+    )
+    registrations = (
+        sb.table("volunteer_registrations")
+        .select("event_id,registration_status,created_at")
+        .eq("user_id", user.id)
+        .in_("event_id", event_ids)
+        .execute()
+        .data
+        or []
+    )
+    events_by_id = {event["id"]: event for event in events}
+    registrations_by_event = {registration["event_id"]: registration for registration in registrations}
+
+    items = []
+    certificates = []
+    total_verified_hours = 0.0
+    for record in records:
+        event = events_by_id.get(record["event_id"], {})
+        registration = registrations_by_event.get(record["event_id"], {})
+        lgu_status = att.status_to_api(record.get("lgu_status"))
+        organizer_status = att.status_to_api(record.get("organizer_status"))
+        verified_hours = float(record.get("calculated_hours") or 0) if record.get("lgu_status") == "verified" else 0.0
+        total_verified_hours += verified_hours
+        item = {
+            "event_id": record["event_id"],
+            "attendance_id": record["id"],
+            "title": event.get("title", "Cleanup event"),
+            "barangay": event.get("barangay"),
+            "scheduled_start": event.get("scheduled_start"),
+            "scheduled_end": event.get("scheduled_end"),
+            "approval_status": event.get("approval_status"),
+            "registration_status": registration.get("registration_status", "registered"),
+            "registered_at": registration.get("created_at") or record.get("created_at"),
+            "organizer_status": organizer_status,
+            "lgu_status": lgu_status,
+            "check_in_time": record.get("check_in_time"),
+            "check_out_time": record.get("check_out_time"),
+            "calculated_hours": float(record.get("calculated_hours") or 0),
+            "verified_hours": verified_hours,
+            "certificate_available": record.get("lgu_status") == "verified",
+        }
+        items.append(item)
+        if item["certificate_available"]:
+            certificates.append({
+                "event_id": item["event_id"],
+                "title": item["title"],
+                "barangay": item["barangay"],
+                "service_hours": verified_hours,
+                "verified_at": record.get("check_out_time") or record.get("check_in_time") or record.get("created_at"),
+            })
+
+    return {
+        "events": items,
+        "certificates": certificates,
+        "summary": {
+            "total_events": len(items),
+            "verified_events": len(certificates),
+            "total_verified_hours": round(total_verified_hours, 2),
+        },
+    }
+
+
 @router.get("/events/{event_id}/certificates/{user_id}")
 def service_certificate(
     event_id: str,

@@ -243,6 +243,11 @@ async def upload_chunk(
     sb = get_supabase()
     _session_owned(sb, session_id, user.id)
     content = await video.read()
+    content_type = video.content_type or "video/mp4"
+    extension = "webm" if content_type == "video/webm" else "mp4"
+    key = f"{session_id}/{uuid.uuid4().hex}.{extension}"
+    sb.storage.from_("video-chunks").upload(key, content, {"content-type": content_type})
+    url = sb.storage.from_("video-chunks").get_public_url(key)
     trace = json.loads(gps_trace_json) if gps_trace_json else []
     lat = trace[-1]["lat"] if trace else None
     lng = trace[-1]["lng"] if trace else None

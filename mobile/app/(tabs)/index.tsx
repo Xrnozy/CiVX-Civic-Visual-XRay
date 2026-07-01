@@ -3,6 +3,8 @@ import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-nati
 import { Link, usePathname } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../../lib/api';
+import { colors, productShadow, radii, type } from '../../styles/theme';
+import ProfileAvatarButton from '../../components/ProfileAvatarButton';
 
 type CommunityImpact = {
   resolved_incidents: number;
@@ -14,8 +16,8 @@ type CommunityImpact = {
 const POLL_MS = 10000;
 
 const quickActions = [
-  { href: '/report', label: 'Report', caption: 'Capture a visible issue', accent: 'primary' },
-  { href: '/ecoquest', label: 'EcoQuest', caption: 'Complete micro-tasks', accent: 'secondary' },
+  { href: '/report', label: 'Report', caption: 'Capture a visible issue' },
+  { href: '/ecoquest', label: 'EcoQuest', caption: 'Complete micro-tasks' },
 ];
 
 const highlights = [
@@ -42,12 +44,13 @@ export default function HomeScreen() {
     }, [loadImpact]),
   );
 
-  const formatStat = (value: number | undefined) => (value === undefined ? '—' : String(value));
+  const formatStat = (value: number | undefined) => (value === undefined ? '-' : String(value));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ProfileAvatarButton />
       <View style={styles.tileLight}>
-        <Text style={styles.eyebrow}>CIVIC VISUAL X-RAY</Text>
+        <Text style={styles.eyebrow}>Civic Visual X-Ray</Text>
         <Text style={styles.heroTitle}>Turn city issues into coordinated action.</Text>
         <Text style={styles.heroSubtitle}>
           CiVX helps residents, volunteers, and LGU teams report visible problems, verify them faster, and resolve them together.
@@ -76,9 +79,7 @@ export default function HomeScreen() {
             <Text style={styles.statLabel}>Cleanups</Text>
           </View>
           <View style={styles.statPill}>
-            <Text style={styles.statValue}>
-              {impact ? `${impact.verification_rate}%` : '—'}
-            </Text>
+            <Text style={styles.statValue}>{impact ? `${impact.verification_rate}%` : '-'}</Text>
             <Text style={styles.statLabel}>Verified</Text>
           </View>
         </View>
@@ -119,186 +120,61 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: {
-    flex: 1,
-    backgroundColor: '#f5f5f7',
-  },
-  container: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 24,
-    backgroundColor: '#f5f5f7',
-  },
+  screen: { flex: 1, backgroundColor: colors.parchment },
+  container: { paddingHorizontal: 20, paddingTop: 68, paddingBottom: 24, backgroundColor: colors.parchment },
   tileLight: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
     paddingHorizontal: 24,
     paddingTop: 28,
     paddingBottom: 24,
     marginBottom: 16,
+    borderRadius: radii.card,
+    borderWidth: 1,
+    borderColor: colors.hairline,
+    ...productShadow,
   },
   tileDark: {
-    backgroundColor: '#272729',
+    backgroundColor: colors.tileDark,
     paddingHorizontal: 24,
     paddingTop: 28,
     paddingBottom: 24,
     marginBottom: 16,
+    borderRadius: radii.card,
+    ...productShadow,
   },
   tileLightSecondary: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
     paddingHorizontal: 24,
     paddingTop: 24,
     paddingBottom: 24,
-  },
-  eyebrow: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    color: '#0066cc',
-    textTransform: 'uppercase',
-  },
-  darkEyebrow: {
-    fontSize: 12,
-    fontWeight: '600',
-    letterSpacing: 1.2,
-    color: '#2997ff',
-    textTransform: 'uppercase',
-  },
-  heroTitle: {
-    fontSize: 34,
-    fontWeight: '600',
-    color: '#1d1d1f',
-    lineHeight: 40,
-    marginTop: 10,
-    letterSpacing: -0.3,
-  },
-  heroSubtitle: {
-    fontSize: 17,
-    color: '#333333',
-    lineHeight: 25,
-    marginTop: 10,
-  },
-  buttonRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 18,
-  },
-  buttonPrimary: {
-    backgroundColor: '#0066cc',
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    marginRight: 10,
-    marginBottom: 10,
-  },
-  buttonPrimaryText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  buttonSecondary: {
-    backgroundColor: '#ffffff',
+    borderRadius: radii.card,
     borderWidth: 1,
-    borderColor: '#0066cc',
-    paddingVertical: 11,
-    paddingHorizontal: 18,
-    borderRadius: 999,
-    marginBottom: 10,
+    borderColor: colors.hairline,
   },
-  buttonSecondaryText: {
-    color: '#0066cc',
-    fontSize: 15,
-    fontWeight: '500',
-  },
-  statRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 18,
-  },
-  statPill: {
-    backgroundColor: '#f5f5f7',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  statValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1d1d1f',
-  },
-  statLabel: {
-    fontSize: 12,
-    color: '#7a7a7a',
-    marginTop: 2,
-  },
-  darkTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#ffffff',
-    lineHeight: 30,
-    marginTop: 10,
-    letterSpacing: -0.2,
-  },
-  cardList: {
-    marginTop: 16,
-  },
-  infoCard: {
-    backgroundColor: '#2a2a2c',
-    padding: 14,
-    borderRadius: 14,
-    marginBottom: 10,
-  },
-  infoCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  infoCardBody: {
-    fontSize: 14,
-    color: '#cccccc',
-    lineHeight: 20,
-    marginTop: 4,
-  },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
-    color: '#1d1d1f',
-    letterSpacing: -0.2,
-  },
-  actionGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 14,
-  },
-  actionCard: {
-    width: '48%',
-    backgroundColor: '#f5f5f7',
-    borderRadius: 16,
-    padding: 14,
-    marginRight: '2%',
-    marginBottom: 10,
-    minHeight: 90,
-    justifyContent: 'center',
-  },
-  actionCardActive: {
-    backgroundColor: '#0066cc',
-  },
-  actionLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#1d1d1f',
-  },
-  actionLabelActive: {
-    color: '#ffffff',
-  },
-  actionCaption: {
-    fontSize: 13,
-    color: '#7a7a7a',
-    marginTop: 4,
-    lineHeight: 18,
-  },
-  actionCaptionActive: {
-    color: '#eaf3ff',
-  },
+  eyebrow: { ...type.eyebrow, color: colors.primary },
+  darkEyebrow: { ...type.eyebrow, color: colors.primaryOnDark },
+  heroTitle: { fontSize: 34, fontWeight: '600', color: colors.ink, lineHeight: 40, marginTop: 10 },
+  heroSubtitle: { fontSize: 17, color: colors.ink80, lineHeight: 25, marginTop: 10 },
+  buttonRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 18 },
+  buttonPrimary: { backgroundColor: colors.primary, paddingVertical: 11, paddingHorizontal: 18, borderRadius: radii.pill, marginRight: 10, marginBottom: 10 },
+  buttonPrimaryText: { color: colors.canvas, fontSize: 15, fontWeight: '500' },
+  buttonSecondary: { backgroundColor: colors.canvas, borderWidth: 1, borderColor: colors.primary, paddingVertical: 11, paddingHorizontal: 18, borderRadius: radii.pill, marginBottom: 10 },
+  buttonSecondaryText: { color: colors.primary, fontSize: 15, fontWeight: '500' },
+  statRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 18 },
+  statPill: { backgroundColor: colors.parchment, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, marginRight: 8, marginBottom: 8 },
+  statValue: { fontSize: 16, fontWeight: '600', color: colors.ink },
+  statLabel: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  darkTitle: { fontSize: 24, fontWeight: '600', color: colors.canvas, lineHeight: 30, marginTop: 10 },
+  cardList: { marginTop: 16 },
+  infoCard: { backgroundColor: colors.tileDark2, padding: 14, borderRadius: 14, marginBottom: 10 },
+  infoCardTitle: { fontSize: 16, fontWeight: '600', color: colors.canvas },
+  infoCardBody: { fontSize: 14, color: colors.bodyMuted, lineHeight: 20, marginTop: 4 },
+  sectionTitle: { fontSize: 24, fontWeight: '600', color: colors.ink },
+  actionGrid: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 14 },
+  actionCard: { width: '48%', backgroundColor: colors.parchment, borderRadius: 16, padding: 14, marginRight: '2%', marginBottom: 10, minHeight: 90, justifyContent: 'center' },
+  actionCardActive: { backgroundColor: colors.primary },
+  actionLabel: { fontSize: 16, fontWeight: '600', color: colors.ink },
+  actionLabelActive: { color: colors.canvas },
+  actionCaption: { fontSize: 13, color: colors.muted, marginTop: 4, lineHeight: 18 },
+  actionCaptionActive: { color: '#eaf3ff' },
 });
