@@ -4,6 +4,7 @@ from app.auth.firebase import AuthUser, get_current_user, require_roles, get_opt
 from app.db import get_supabase
 from app.models.schemas import IncidentUpdate
 from app.utils.audit import log_audit, sanitize_incident_public, sanitize_incident_lgu, normalize_submitter_type
+from app.utils.storage import resolve_photo_url, resolve_photo_urls
 from app.agents.lgu_triage import LGUTriageAgent
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
@@ -49,7 +50,7 @@ def list_incidents(
 @router.get("/{incident_id}/reports")
 def list_incident_reports(incident_id: str, user: AuthUser | None = Depends(get_optional_user)):
     sb = get_supabase()
-    incident = sb.table("incidents").select("id,status,source").eq("id", incident_id).single().execute().data
+    incident = sb.table("incidents").select("id,status,source,verified_at").eq("id", incident_id).single().execute().data
     can_view_all = bool(user and user.role in LGU)
     if not can_view_all and incident["status"] not in {"verified", "assigned", "ongoing", "resolved"}:
         raise HTTPException(status_code=403, detail="Not allowed")
@@ -65,7 +66,20 @@ def list_incident_reports(incident_id: str, user: AuthUser | None = Depends(get_
     )
 
     submitter_type = normalize_submitter_type(incident.get("source"))
-    return [{**report, "submitter_type": submitter_type} for report in reports]
+    incident_source = incident.get("source")
+    incident_status = incident.get("status")
+    signed_reports = []
+    for report in reports:
+        signed = {
+            **report,
+            "submitter_type": submitter_type,
+            "source": incident_source,
+            "incident_status": incident_status,
+            "photo_url": resolve_photo_url(report.get("photo_url")),
+            "photo_urls": resolve_photo_urls(report.get("photo_urls") if isinstance(report.get("photo_urls"), list) else []),
+        }
+        signed_reports.append(signed)
+    return signed_reports
 
 
 @router.get("/{incident_id}")
