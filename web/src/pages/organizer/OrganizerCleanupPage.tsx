@@ -10,29 +10,11 @@ import {
   OrganizerEventDetailCard,
   type OrganizerCleanupEvent,
 } from '../../components/organizer/OrganizerEventDetailCard';
-import type { OrganizerEventAttendee } from '../../components/organizer/OrganizerAttendeeRosterTable';
 import { useProfile } from '../../hooks/useProfile';
 import { useOrganizerCleanup } from './OrganizerLayout';
 
 interface CleanupEvent extends OrganizerCleanupEvent {
   max_volunteers: number;
-}
-
-interface OrganizerEventAttendeeRow extends OrganizerEventAttendee {
-  barangay?: string;
-  emergency_contact?: string;
-  check_in_time?: string;
-  check_out_time?: string;
-  calculated_hours: number;
-}
-
-interface OrganizerAttendeeRoster {
-  event: {
-    id: string;
-    title: string;
-    approval_status: string;
-  };
-  attendees: OrganizerEventAttendeeRow[];
 }
 
 const EMPTY_FORM = {
@@ -52,17 +34,12 @@ function statusClass(status: string) {
   return 'bg-amber-100 text-amber-800';
 }
 
-function countGoingAttendees(attendees: OrganizerEventAttendeeRow[]) {
-  return attendees.filter((attendee) => attendee.attendance_status !== 'rejected').length;
-}
-
 export default function OrganizerCleanupPage() {
   const { profile } = useProfile();
   const { showForm, setShowForm } = useOrganizerCleanup();
   const [events, setEvents] = useState<CleanupEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [attendeeRoster, setAttendeeRoster] = useState<OrganizerAttendeeRoster | null>(null);
-  const [attendeeError, setAttendeeError] = useState('');
+  const [goingCount, setGoingCount] = useState(0);
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
@@ -84,25 +61,17 @@ export default function OrganizerCleanupPage() {
 
   useEffect(() => {
     if (!selectedId) {
-      setAttendeeRoster(null);
-      setAttendeeError('');
+      setGoingCount(0);
       return;
     }
     const selected = events.find((ev) => ev.id === selectedId);
     if (!selected || selected.approval_status !== 'approved') {
-      setAttendeeRoster(null);
-      setAttendeeError('');
+      setGoingCount(0);
       return;
     }
-    api<OrganizerAttendeeRoster>(`/api/cleanup-events/${selectedId}/attendees`)
-      .then((data) => {
-        setAttendeeRoster(data);
-        setAttendeeError('');
-      })
-      .catch(() => {
-        setAttendeeRoster(null);
-        setAttendeeError('Unable to load attendees for this event.');
-      });
+    api<{ going_count?: number }>(`/api/cleanup-events/${selectedId}`)
+      .then((data) => setGoingCount(data.going_count ?? 0))
+      .catch(() => setGoingCount(0));
   }, [events, selectedId]);
 
   async function createEvent(e: FormEvent) {
@@ -132,14 +101,6 @@ export default function OrganizerCleanupPage() {
 
   const selectedEvent = events.find((ev) => ev.id === selectedId) ?? null;
   const organizerName = profile?.organization_name || profile?.full_name || 'Organizer';
-  const goingCount =
-    selectedEvent?.approval_status === 'approved' && attendeeRoster
-      ? countGoingAttendees(attendeeRoster.attendees)
-      : 0;
-  const rosterAttendees = attendeeRoster?.attendees ?? [];
-  const rosterLoading = Boolean(
-    selectedEvent?.approval_status === 'approved' && selectedId && !attendeeRoster && !attendeeError,
-  );
 
   return (
     <div className="min-h-screen bg-canvas-parchment">
@@ -300,9 +261,6 @@ export default function OrganizerCleanupPage() {
                 event={selectedEvent}
                 organizerName={organizerName}
                 goingCount={goingCount}
-                attendees={rosterAttendees}
-                rosterLoading={rosterLoading}
-                rosterError={attendeeError}
               />
             )}
           </div>

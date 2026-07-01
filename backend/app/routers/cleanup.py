@@ -45,11 +45,21 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
 @router.get("/{event_id}")
 def get_event(event_id: str):
     event = att.get_event(event_id)
+    organizer_id = event.get("organizer_user_id")
     return {
         **event,
         "going_count": att.public_going_count(event_id),
-        "organizer_name": att.fetch_organizer_display_name(event.get("organizer_user_id")),
+        "organizer_name": att.fetch_organizer_display_name(organizer_id),
+        "organizer_profile_photo_url": att.fetch_organizer_profile_photo(organizer_id),
     }
+
+
+@router.get("/{event_id}/participants")
+def list_event_participants(event_id: str, user: AuthUser = Depends(get_current_user)):
+    event = att.get_event(event_id)
+    if event.get("approval_status") != "approved":
+        raise HTTPException(403, "Participants are available only for approved events")
+    return {"participants": att.public_participant_names(event_id)}
 
 
 @router.get("/{event_id}/attendees")

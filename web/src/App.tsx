@@ -3,6 +3,7 @@ import { RegistrationGate } from './components/auth/RegistrationGate';
 import HomePage from './pages/HomePage';
 import MapPage from './pages/MapPage';
 import EventsPage from './pages/EventsPage';
+import EventDetailPage from './pages/EventDetailPage';
 import GalleryPage from './pages/GalleryPage';
 import TransparencyPage from './pages/TransparencyPage';
 import ReportPage from './pages/ReportPage';
@@ -33,6 +34,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<HomePage />} />
         <Route path="/map" element={<MapPage />} />
+        <Route path="/events/:eventId" element={<EventDetailPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/report" element={<ReportPage />} />
         <Route path="/analyzer" element={<AnalyzerTestPage />} />

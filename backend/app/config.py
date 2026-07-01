@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     supabase_url: str = ""
     supabase_service_key: str = ""
     supabase_report_photos_bucket: str = "report-photos"
+    supabase_event_photos_bucket: str = "event-photos"
     firebase_project_id: str = ""
     google_application_credentials: str = ""
     cors_origins: str = "http://localhost:5173,http://localhost:3000"

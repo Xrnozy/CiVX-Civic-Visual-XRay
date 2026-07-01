@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { Link } from 'react-router-dom';
 import {
   OrganizerEventDetailCard,
   type OrganizerCleanupEvent,
@@ -70,6 +71,11 @@ export function CommunityEventDrawer({
           embedded
           volunteerFooter={volunteerFooter}
         />
+        <div className="border-t border-hairline px-4 py-4">
+          <Link to={`/events/${event.id}`} className="btn-secondary-pill block w-full justify-center text-center">
+            View event page
+          </Link>
+        </div>
       </div>
     </aside>
   );
