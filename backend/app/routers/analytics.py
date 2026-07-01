@@ -5,6 +5,7 @@ from app.auth.firebase import AuthUser, require_roles
 from app.config import settings
 from app.db import get_supabase
 from app.services.analytics import (
+    ACTIVE_INCIDENT_STATUSES,
     build_by_barangay,
     build_density,
     build_resolved_history,
@@ -87,19 +88,45 @@ def top_volunteers(user: AuthUser = Depends(require_roles(*LGU))):
 
 @router.get("/community-impact")
 def community_impact():
+    empty = {
+        "resolved_incidents": 0,
+        "approved_cleanups": 0,
+        "active_incidents": 0,
+        "verification_rate": 0,
+    }
     if not settings.supabase_configured:
-        return {"resolved_incidents": 0, "approved_cleanups": 0}
+        return empty
 
     try:
         sb = get_supabase()
         resolved = sb.table("incidents").select("*", count="exact", head=True).eq("status", "resolved").execute()
         cleanups = sb.table("cleanup_events").select("*", count="exact", head=True).eq("approval_status", "approved").execute()
+        active = (
+            sb.table("incidents")
+            .select("*", count="exact", head=True)
+            .in_("status", list(ACTIVE_INCIDENT_STATUSES))
+            .execute()
+        )
+        total = sb.table("incidents").select("*", count="exact", head=True).execute()
+        verified = (
+            sb.table("incidents")
+            .select("*", count="exact", head=True)
+            .in_("status", ["verified", "assigned", "ongoing", "resolved", "archived"])
+            .execute()
+        )
+
+        total_count = total.count or 0
+        verified_count = verified.count or 0
+        verification_rate = round(verified_count / total_count * 100) if total_count else 0
+
         return {
             "resolved_incidents": resolved.count or 0,
             "approved_cleanups": cleanups.count or 0,
+            "active_incidents": active.count or 0,
+            "verification_rate": verification_rate,
         }
     except Exception:
-        return {"resolved_incidents": 0, "approved_cleanups": 0}
+        return empty
 
 
 @router.post("/incidents/{incident_id}/summary")

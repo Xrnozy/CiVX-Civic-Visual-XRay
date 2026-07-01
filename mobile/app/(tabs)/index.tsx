@@ -1,5 +1,17 @@
+import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Link, usePathname } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
+import { api } from '../../lib/api';
+
+type CommunityImpact = {
+  resolved_incidents: number;
+  approved_cleanups: number;
+  active_incidents: number;
+  verification_rate: number;
+};
+
+const POLL_MS = 10000;
 
 const quickActions = [
   { href: '/report', label: 'Report', caption: 'Capture a visible issue', accent: 'primary' },
@@ -14,6 +26,23 @@ const highlights = [
 
 export default function HomeScreen() {
   const pathname = usePathname();
+  const [impact, setImpact] = useState<CommunityImpact | null>(null);
+
+  const loadImpact = useCallback(() => {
+    api<CommunityImpact>('/api/analytics/community-impact')
+      .then(setImpact)
+      .catch(() => setImpact(null));
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadImpact();
+      const timer = setInterval(loadImpact, POLL_MS);
+      return () => clearInterval(timer);
+    }, [loadImpact]),
+  );
+
+  const formatStat = (value: number | undefined) => (value === undefined ? '—' : String(value));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -39,15 +68,17 @@ export default function HomeScreen() {
 
         <View style={styles.statRow}>
           <View style={styles.statPill}>
-            <Text style={styles.statValue}>24</Text>
+            <Text style={styles.statValue}>{formatStat(impact?.active_incidents)}</Text>
             <Text style={styles.statLabel}>Live reports</Text>
           </View>
           <View style={styles.statPill}>
-            <Text style={styles.statValue}>12</Text>
+            <Text style={styles.statValue}>{formatStat(impact?.approved_cleanups)}</Text>
             <Text style={styles.statLabel}>Cleanups</Text>
           </View>
           <View style={styles.statPill}>
-            <Text style={styles.statValue}>88%</Text>
+            <Text style={styles.statValue}>
+              {impact ? `${impact.verification_rate}%` : '—'}
+            </Text>
             <Text style={styles.statLabel}>Verified</Text>
           </View>
         </View>
