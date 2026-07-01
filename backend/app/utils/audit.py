@@ -5,6 +5,14 @@ from uuid import UUID
 from app.db import get_supabase
 
 
+def normalize_submitter_type(source: str | None) -> str:
+    if source in {"citizen", "passive", "driver"}:
+        return "community_member"
+    if source and source.startswith("lgu"):
+        return "lgu"
+    return "community_member"
+
+
 def log_audit(
     user_id: str | None,
     action: str,
@@ -33,7 +41,10 @@ def sanitize_incident_public(row: dict[str, Any]) -> dict[str, Any]:
         "status": row["status"],
         "report_count": row.get("report_count", 1),
         "source": row.get("source"),
+        "submitter_type": normalize_submitter_type(row.get("source")),
+        "ai_summary": row.get("ai_summary"),
         "created_at": row.get("created_at"),
+        "verified_at": row.get("verified_at"),
         "resolved_at": row.get("resolved_at"),
     }
 

@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from app.auth.firebase import AuthUser, get_current_user, require_roles, get_optional_user
 from app.db import get_supabase
 from app.models.schemas import IncidentUpdate
-from app.utils.audit import log_audit, sanitize_incident_public, sanitize_incident_lgu
+from app.utils.audit import log_audit, sanitize_incident_public, sanitize_incident_lgu, normalize_submitter_type
 from app.agents.lgu_triage import LGUTriageAgent
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
@@ -47,17 +47,25 @@ def list_incidents(
 
 
 @router.get("/{incident_id}/reports")
-def list_incident_reports(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+def list_incident_reports(incident_id: str, user: AuthUser | None = Depends(get_optional_user)):
     sb = get_supabase()
-    return (
+    incident = sb.table("incidents").select("id,status,source").eq("id", incident_id).single().execute().data
+    can_view_all = bool(user and user.role in LGU)
+    if not can_view_all and incident["status"] not in {"verified", "assigned", "ongoing", "resolved"}:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    reports = (
         sb.table("reports")
-        .select("id,issue_type,description,photo_url,ai_suggested_type,ai_confidence,ai_severity_score,status,created_at,reporter_user_id")
+        .select("id,issue_type,description,photo_url,photo_urls,ai_suggested_type,ai_confidence,ai_bounding_box,ai_severity_score,status,created_at,reporter_user_id,latitude,longitude,address_text")
         .eq("merged_incident_id", incident_id)
         .order("created_at", desc=True)
         .execute()
         .data
         or []
     )
+
+    submitter_type = normalize_submitter_type(incident.get("source"))
+    return [{**report, "submitter_type": submitter_type} for report in reports]
 
 
 @router.get("/{incident_id}")

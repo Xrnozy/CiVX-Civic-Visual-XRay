@@ -10,6 +10,17 @@ interface MarkerData {
   primary_issue_type?: string;
   title?: string;
   type: 'incident' | 'cleanup';
+  status?: string;
+  severity_score?: number;
+  report_count?: number;
+  source?: string;
+  submitter_type?: string;
+  created_at?: string;
+  preview_photo_url?: string;
+  preview_description?: string;
+  preview_ai_suggested_type?: string;
+  preview_ai_confidence?: number;
+  preview_created_at?: string;
 }
 
 interface Props {
@@ -20,6 +31,10 @@ interface Props {
   selectedLocation?: { latitude: number; longitude: number } | null;
   onLocationPick?: (latitude: number, longitude: number) => void;
   heightClass?: string;
+  selectedMarkerId?: string | null;
+  onMarkerSelect?: (marker: MarkerData) => void;
+  onMapBackgroundClick?: () => void;
+  onPreviewExpand?: (markerId: string) => void;
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -53,6 +68,10 @@ export function CivicMap({
   selectedLocation,
   onLocationPick,
   heightClass = 'h-[70vh]',
+  selectedMarkerId,
+  onMarkerSelect,
+  onMapBackgroundClick,
+  onPreviewExpand,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
@@ -60,8 +79,48 @@ export function CivicMap({
   const [loading, setLoading] = useState(true);
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
   const markerClustererRef = useRef<MarkerClusterer | null>(null);
+  const markerByIdRef = useRef<Map<string, any>>(new Map());
+  const infoWindowRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
   const clickListenerRef = useRef<any>(null);
+
+  function escapeHtml(value: string): string {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function previewCardHtml(marker: MarkerData, expandButtonId: string): string {
+    const title = escapeHtml((marker.primary_issue_type || marker.title || 'Incident').replace(/_/g, ' '));
+    const submitter = marker.submitter_type === 'lgu' ? 'LGU' : 'Community member';
+    const submittedAt = marker.preview_created_at || marker.created_at;
+    const createdLabel = submittedAt ? escapeHtml(new Date(submittedAt).toLocaleString()) : 'Unknown';
+    const aiLabel = marker.preview_ai_suggested_type
+      ? `${escapeHtml(marker.preview_ai_suggested_type.replace(/_/g, ' '))}${typeof marker.preview_ai_confidence === 'number' ? ` (${Math.round(marker.preview_ai_confidence * 100)}%)` : ''}`
+      : 'Pending';
+    const lat = Number.isFinite(marker.latitude) ? marker.latitude.toFixed(6) : 'Unknown';
+    const lng = Number.isFinite(marker.longitude) ? marker.longitude.toFixed(6) : 'Unknown';
+    const image = marker.preview_photo_url
+      ? `<img src="${escapeHtml(marker.preview_photo_url)}" alt="Incident preview" style="height:58px;width:58px;border-radius:10px;object-fit:cover;flex-shrink:0;" />`
+      : `<div style="height:58px;width:58px;border-radius:10px;background:#f5f5f7;color:#7a7a7a;display:flex;align-items:center;justify-content:center;font-size:11px;">No photo</div>`;
+    return `
+      <div style="width:248px;color:#1d1d1f;font-family:Inter,system-ui,-apple-system,sans-serif;line-height:1.35;">
+        <div style="display:flex;gap:10px;align-items:flex-start;">
+          ${image}
+          <div style="min-width:0;">
+            <div style="font-size:13px;font-weight:700;text-transform:capitalize;">${title}</div>
+            <div style="margin-top:3px;font-size:11px;color:#7a7a7a;">${submitter} · ${createdLabel}</div>
+            <div style="margin-top:6px;font-size:11px;color:#333;">AI: ${aiLabel}</div>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:#333;">${lat}, ${lng}</div>
+        <button id="${expandButtonId}" style="margin-top:8px;width:100%;border:0;border-radius:999px;background:#0066cc;color:#fff;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;">Expand details</button>
+      </div>
+    `;
+  }
 
   useEffect(() => {
     if (!apiKey) {
@@ -113,7 +172,7 @@ export function CivicMap({
       cancelled = true;
       delete (window as Window & { gm_authFailure?: () => void }).gm_authFailure;
     };
-  }, [apiKey, lguMode]);
+  }, [apiKey, lguMode, center, zoom]);
 
   useEffect(() => {
     if (!map) return;
@@ -123,16 +182,17 @@ export function CivicMap({
       clickListenerRef.current.remove();
       clickListenerRef.current = null;
     }
-    if (!onLocationPick) return;
+    if (!onLocationPick && !onMapBackgroundClick) return;
     clickListenerRef.current = map.addListener('click', (event: any) => {
+      onMapBackgroundClick?.();
       if (!event.latLng) return;
-      onLocationPick(event.latLng.lat(), event.latLng.lng());
+      onLocationPick?.(event.latLng.lat(), event.latLng.lng());
     });
     return () => {
       clickListenerRef.current?.remove();
       clickListenerRef.current = null;
     };
-  }, [map, onLocationPick]);
+  }, [map, onLocationPick, onMapBackgroundClick]);
 
   useEffect(() => {
     if (!map) return;
@@ -142,6 +202,8 @@ export function CivicMap({
       markerClustererRef.current.clearMarkers();
       markerClustererRef.current = null;
     }
+    markerByIdRef.current.clear();
+    infoWindowRef.current?.close();
     if (selectedMarkerRef.current) {
       selectedMarkerRef.current.dispose?.();
       selectedMarkerRef.current.setMap(null);
@@ -163,6 +225,10 @@ export function CivicMap({
                 strokeWeight: 0,
               },
       });
+      marker.addListener('click', () => {
+        onMarkerSelect?.(mk);
+      });
+      markerByIdRef.current.set(mk.id, marker);
       return marker;
     });
 
@@ -242,7 +308,37 @@ export function CivicMap({
       selectedMarkerRef.current?.setMap(null);
       selectedMarkerRef.current = null;
     };
-  }, [map, markers, selectedLocation]);
+  }, [map, markers, selectedLocation, onMarkerSelect]);
+
+  useEffect(() => {
+    if (!map) return;
+    const gmaps = (window as any).google?.maps;
+    if (!gmaps) return;
+    if (!selectedMarkerId) {
+      infoWindowRef.current?.close();
+      return;
+    }
+
+    const markerData = markers.find((item) => item.id === selectedMarkerId && item.type === 'incident');
+    const marker = markerByIdRef.current.get(selectedMarkerId);
+    if (!markerData || !marker) {
+      infoWindowRef.current?.close();
+      return;
+    }
+
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new gmaps.InfoWindow();
+    }
+    const buttonId = `civx-expand-${markerData.id}`;
+    infoWindowRef.current.setContent(previewCardHtml(markerData, buttonId));
+    infoWindowRef.current.open({ map, anchor: marker });
+
+    gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', () => {
+      const button = document.getElementById(buttonId);
+      if (!button) return;
+      button.onclick = () => onPreviewExpand?.(markerData.id);
+    });
+  }, [map, markers, selectedMarkerId, onPreviewExpand]);
 
   if (mapError) {
     const enableUrl = `https://console.cloud.google.com/apis/library/maps-backend.googleapis.com?project=${MAPS_PROJECT_ID}`;
