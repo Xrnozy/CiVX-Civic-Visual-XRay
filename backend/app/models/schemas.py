@@ -29,6 +29,11 @@ class CleanupEventCreate(BaseModel):
     issue_or_incident_id: str | None = None
 
 
+class CleanupProofImagesUpdate(BaseModel):
+    before_image_url: str | None = None
+    after_image_url: str | None = None
+
+
 class VolunteerRegister(BaseModel):
     full_name: str
     phone_number: str | None = None
