@@ -1,10 +1,11 @@
 import uuid
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
 from app.db import get_supabase
 from app.models.schemas import CleanupEventCreate
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
+from app.services import attendance as att
 from app.utils.audit import log_audit
 
 router = APIRouter(prefix="/api/cleanup-events", tags=["cleanup"])
@@ -45,6 +46,49 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
 def get_event(event_id: str):
     sb = get_supabase()
     return sb.table("cleanup_events").select("*").eq("id", event_id).single().execute().data
+
+
+@router.get("/{event_id}/attendees")
+def get_event_attendees(
+    event_id: str,
+    user: AuthUser = Depends(require_roles(*ORGANIZER_AND_LGU)),
+):
+    event = att.get_event(event_id)
+    if event.get("approval_status") != "approved":
+        raise HTTPException(403, "Attendee roster is available only for approved events")
+    if user.role == "organizer" and event.get("organizer_user_id") != user.id:
+        raise HTTPException(403, "Not authorized for this event")
+
+    records = att.fetch_event_records(event_id)
+    registrations = att.fetch_registrations(event_id)
+    user_ids = [rec["user_id"] for rec in records]
+    emails = att.fetch_user_emails(user_ids)
+    attendees = []
+    for rec in records:
+        reg = registrations.get(rec["user_id"], {})
+        attendees.append(
+            {
+                "user_id": rec["user_id"],
+                "full_name": reg.get("full_name") or "Volunteer",
+                "phone_number": reg.get("phone_number"),
+                "email": emails.get(rec["user_id"]),
+                "barangay": reg.get("barangay"),
+                "emergency_contact": reg.get("emergency_contact"),
+                "attendance_status": att.status_to_api(rec.get("lgu_status") or rec.get("organizer_status")),
+                "check_in_time": rec.get("check_in_time"),
+                "check_out_time": rec.get("check_out_time"),
+                "calculated_hours": float(rec.get("calculated_hours") or 0),
+            }
+        )
+    attendees.sort(key=lambda row: row.get("full_name", ""))
+    return {
+        "event": {
+            "id": event["id"],
+            "title": event.get("title"),
+            "approval_status": event.get("approval_status"),
+        },
+        "attendees": attendees,
+    }
 
 
 @router.post("/{event_id}/approve")

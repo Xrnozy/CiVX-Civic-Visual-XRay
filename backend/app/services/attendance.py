@@ -170,6 +170,14 @@ def fetch_registrations(event_id: str) -> dict[str, dict[str, Any]]:
     return {r["user_id"]: r for r in rows}
 
 
+def fetch_user_emails(user_ids: list[str]) -> dict[str, str | None]:
+    if not user_ids:
+        return {}
+    sb = get_supabase()
+    rows = sb.table("users").select("id, email").in_("id", user_ids).execute().data or []
+    return {row["id"]: row.get("email") for row in rows}
+
+
 def list_monitor_events(user: AuthUser, approved_only: bool = True) -> list[dict[str, Any]]:
     sb = get_supabase()
     q = sb.table("cleanup_events").select(

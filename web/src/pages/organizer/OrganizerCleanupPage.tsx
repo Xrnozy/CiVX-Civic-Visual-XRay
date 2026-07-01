@@ -6,18 +6,33 @@ import {
   LocationPickerSection,
   hasValidLocation,
 } from '../../components/map/LocationPickerSection';
+import {
+  OrganizerEventDetailCard,
+  type OrganizerCleanupEvent,
+} from '../../components/organizer/OrganizerEventDetailCard';
+import type { OrganizerEventAttendee } from '../../components/organizer/OrganizerAttendeeRosterTable';
+import { useProfile } from '../../hooks/useProfile';
 import { useOrganizerCleanup } from './OrganizerLayout';
 
-interface CleanupEvent {
-  id: string;
-  title: string;
-  barangay?: string;
-  scheduled_start: string;
-  scheduled_end: string;
-  approval_status: string;
+interface CleanupEvent extends OrganizerCleanupEvent {
   max_volunteers: number;
-  latitude?: number;
-  longitude?: number;
+}
+
+interface OrganizerEventAttendeeRow extends OrganizerEventAttendee {
+  barangay?: string;
+  emergency_contact?: string;
+  check_in_time?: string;
+  check_out_time?: string;
+  calculated_hours: number;
+}
+
+interface OrganizerAttendeeRoster {
+  event: {
+    id: string;
+    title: string;
+    approval_status: string;
+  };
+  attendees: OrganizerEventAttendeeRow[];
 }
 
 const EMPTY_FORM = {
@@ -37,9 +52,17 @@ function statusClass(status: string) {
   return 'bg-amber-100 text-amber-800';
 }
 
+function countGoingAttendees(attendees: OrganizerEventAttendeeRow[]) {
+  return attendees.filter((attendee) => attendee.attendance_status !== 'rejected').length;
+}
+
 export default function OrganizerCleanupPage() {
+  const { profile } = useProfile();
   const { showForm, setShowForm } = useOrganizerCleanup();
   const [events, setEvents] = useState<CleanupEvent[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [attendeeRoster, setAttendeeRoster] = useState<OrganizerAttendeeRoster | null>(null);
+  const [attendeeError, setAttendeeError] = useState('');
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
@@ -51,6 +74,36 @@ export default function OrganizerCleanupPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    setSelectedId((prev) => {
+      if (prev && events.some((ev) => ev.id === prev)) return prev;
+      return events[0]?.id ?? null;
+    });
+  }, [events]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setAttendeeRoster(null);
+      setAttendeeError('');
+      return;
+    }
+    const selected = events.find((ev) => ev.id === selectedId);
+    if (!selected || selected.approval_status !== 'approved') {
+      setAttendeeRoster(null);
+      setAttendeeError('');
+      return;
+    }
+    api<OrganizerAttendeeRoster>(`/api/cleanup-events/${selectedId}/attendees`)
+      .then((data) => {
+        setAttendeeRoster(data);
+        setAttendeeError('');
+      })
+      .catch(() => {
+        setAttendeeRoster(null);
+        setAttendeeError('Unable to load attendees for this event.');
+      });
+  }, [events, selectedId]);
 
   async function createEvent(e: FormEvent) {
     e.preventDefault();
@@ -76,6 +129,17 @@ export default function OrganizerCleanupPage() {
       setCreating(false);
     }
   }
+
+  const selectedEvent = events.find((ev) => ev.id === selectedId) ?? null;
+  const organizerName = profile?.organization_name || profile?.full_name || 'Organizer';
+  const goingCount =
+    selectedEvent?.approval_status === 'approved' && attendeeRoster
+      ? countGoingAttendees(attendeeRoster.attendees)
+      : 0;
+  const rosterAttendees = attendeeRoster?.attendees ?? [];
+  const rosterLoading = Boolean(
+    selectedEvent?.approval_status === 'approved' && selectedId && !attendeeRoster && !attendeeError,
+  );
 
   return (
     <div className="min-h-screen bg-canvas-parchment">
@@ -193,29 +257,53 @@ export default function OrganizerCleanupPage() {
             {events.length} drive{events.length === 1 ? '' : 's'} · approved drives appear on the public map
           </p>
 
-          <div className="mt-4 space-y-3">
-            {events.map((ev) => (
-              <div key={ev.id} className="store-utility-card flex flex-wrap items-center justify-between gap-4 bg-canvas">
-                <div>
-                  <p className="font-semibold text-ink">{ev.title}</p>
-                  <p className="mt-1 text-sm text-ink-muted-48">
-                    {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
-                  </p>
-                  {ev.latitude != null && ev.longitude != null && (
-                    <p className="mt-1 text-xs text-ink-muted-48">
-                      Location: {Number(ev.latitude).toFixed(5)}, {Number(ev.longitude).toFixed(5)}
+          <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_460px]">
+            <div className="space-y-3">
+              {events.map((ev) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => setSelectedId(ev.id)}
+                  className={`store-utility-card flex w-full flex-wrap items-center justify-between gap-4 bg-canvas text-left transition ${
+                    selectedId === ev.id ? 'border-primary ring-2 ring-primary/20' : ''
+                  }`}
+                >
+                  <div>
+                    <p className="font-semibold text-ink">{ev.title}</p>
+                    <p className="mt-1 text-sm text-ink-muted-48">
+                      {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
                     </p>
-                  )}
+                    {ev.latitude != null && ev.longitude != null && (
+                      <p className="mt-1 text-xs text-ink-muted-48">
+                        Location: {Number(ev.latitude).toFixed(5)}, {Number(ev.longitude).toFixed(5)}
+                      </p>
+                    )}
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(ev.approval_status)}`}>
+                    {ev.approval_status.replace('_', ' ')}
+                  </span>
+                </button>
+              ))}
+              {events.length === 0 && (
+                <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
+                  No cleanup drives yet. Use <strong className="text-ink">New cleanup drive</strong> above to plan your first one.
                 </div>
-                <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(ev.approval_status)}`}>
-                  {ev.approval_status.replace('_', ' ')}
-                </span>
+              )}
+            </div>
+
+            {!selectedEvent ? (
+              <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48 lg:sticky lg:top-24 lg:self-start">
+                Select a drive to view details.
               </div>
-            ))}
-            {events.length === 0 && (
-              <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
-                No cleanup drives yet. Use <strong className="text-ink">New cleanup drive</strong> above to plan your first one.
-              </div>
+            ) : (
+              <OrganizerEventDetailCard
+                event={selectedEvent}
+                organizerName={organizerName}
+                goingCount={goingCount}
+                attendees={rosterAttendees}
+                rosterLoading={rosterLoading}
+                rosterError={attendeeError}
+              />
             )}
           </div>
         </div>
