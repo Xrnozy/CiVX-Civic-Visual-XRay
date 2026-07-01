@@ -44,8 +44,12 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
 
 @router.get("/{event_id}")
 def get_event(event_id: str):
-    sb = get_supabase()
-    return sb.table("cleanup_events").select("*").eq("id", event_id).single().execute().data
+    event = att.get_event(event_id)
+    return {
+        **event,
+        "going_count": att.public_going_count(event_id),
+        "organizer_name": att.fetch_organizer_display_name(event.get("organizer_user_id")),
+    }
 
 
 @router.get("/{event_id}/attendees")

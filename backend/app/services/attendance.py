@@ -170,6 +170,50 @@ def fetch_registrations(event_id: str) -> dict[str, dict[str, Any]]:
     return {r["user_id"]: r for r in rows}
 
 
+def public_going_count(event_id: str) -> int:
+    records = fetch_event_records(event_id)
+    return sum(1 for rec in records if status_to_api(rec.get("lgu_status")) != "rejected")
+
+
+def fetch_organizer_display_name(organizer_user_id: str | None) -> str:
+    if not organizer_user_id:
+        return "Community organizer"
+    sb = get_supabase()
+    rows = (
+        sb.table("users")
+        .select("full_name,organization_name")
+        .eq("id", organizer_user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return "Community organizer"
+    user = rows[0]
+    name = (user.get("organization_name") or user.get("full_name") or "Community organizer").strip()
+    return name or "Community organizer"
+
+
+def volunteer_event_status(event_id: str, user_id: str) -> dict[str, Any]:
+    sb = get_supabase()
+    rows = (
+        sb.table("attendance_records")
+        .select("organizer_status,lgu_status")
+        .eq("event_id", event_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return {"registered": False}
+    record = rows[0]
+    status = status_to_api(record.get("lgu_status") or record.get("organizer_status"))
+    return {"registered": True, "status": status}
+
+
 def fetch_user_emails(user_ids: list[str]) -> dict[str, str | None]:
     if not user_ids:
         return {}

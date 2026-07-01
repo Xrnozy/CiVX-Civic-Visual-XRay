@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { ButtonSecondaryPill } from '../ui/Buttons';
 import { OrganizerEventDetailsModal } from './OrganizerEventDetailsModal';
 import type { OrganizerEventAttendee } from './OrganizerAttendeeRosterTable';
@@ -19,9 +19,12 @@ interface Props {
   event: OrganizerCleanupEvent;
   organizerName: string;
   goingCount: number;
-  attendees: OrganizerEventAttendee[];
-  rosterLoading: boolean;
-  rosterError: string;
+  attendees?: OrganizerEventAttendee[];
+  rosterLoading?: boolean;
+  rosterError?: string;
+  hideFullDetails?: boolean;
+  embedded?: boolean;
+  volunteerFooter?: ReactNode;
 }
 
 const EVENT_CATEGORY_LABEL = 'Cleanup drive';
@@ -58,9 +61,12 @@ export function OrganizerEventDetailCard({
   event,
   organizerName,
   goingCount,
-  attendees,
-  rosterLoading,
-  rosterError,
+  attendees = [],
+  rosterLoading = false,
+  rosterError = '',
+  hideFullDetails = false,
+  embedded = false,
+  volunteerFooter,
 }: Props) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const located = hasCoords(event);
@@ -71,7 +77,13 @@ export function OrganizerEventDetailCard({
 
   return (
     <>
-      <article className="store-utility-card overflow-hidden bg-canvas lg:sticky lg:top-24 lg:self-start">
+      <article
+        className={
+          embedded
+            ? 'overflow-hidden bg-canvas'
+            : 'store-utility-card overflow-hidden bg-canvas lg:sticky lg:top-24 lg:self-start'
+        }
+      >
         <div className="relative h-44 overflow-hidden bg-primary/10">
           <img
             src={BANNER_PLACEHOLDER}
@@ -144,27 +156,33 @@ export function OrganizerEventDetailCard({
             </div>
           </dl>
 
-          <ButtonSecondaryPill
-            type="button"
-            className="w-full justify-center"
-            aria-haspopup="dialog"
-            onClick={() => setDetailsOpen(true)}
-          >
-            Full details
-          </ButtonSecondaryPill>
+          {volunteerFooter}
+
+          {!hideFullDetails ? (
+            <ButtonSecondaryPill
+              type="button"
+              className="w-full justify-center"
+              aria-haspopup="dialog"
+              onClick={() => setDetailsOpen(true)}
+            >
+              Full details
+            </ButtonSecondaryPill>
+          ) : null}
         </div>
       </article>
 
-      <OrganizerEventDetailsModal
-        open={detailsOpen}
-        title={event.title}
-        description={event.description}
-        approvalStatus={event.approval_status}
-        attendees={attendees}
-        rosterLoading={rosterLoading}
-        rosterError={rosterError}
-        onClose={() => setDetailsOpen(false)}
-      />
+      {!hideFullDetails ? (
+        <OrganizerEventDetailsModal
+          open={detailsOpen}
+          title={event.title}
+          description={event.description}
+          approvalStatus={event.approval_status}
+          attendees={attendees}
+          rosterLoading={rosterLoading}
+          rosterError={rosterError}
+          onClose={() => setDetailsOpen(false)}
+        />
+      ) : null}
     </>
   );
 }
