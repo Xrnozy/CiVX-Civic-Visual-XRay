@@ -38,13 +38,17 @@ export default function EventsPage() {
         ) : (
           <div className="grid gap-6 md:grid-cols-3">
             {events.map((e) => (
-              <article key={e.id} className="store-utility-card flex flex-col">
+              <Link
+                key={e.id}
+                to={`/events/${e.id}`}
+                className="store-utility-card flex flex-col transition hover:border-primary/40"
+              >
                 <p className="text-xs font-semibold uppercase tracking-widest text-primary">Cleanup</p>
                 <h3 className="mt-2 text-[21px] font-semibold text-ink">{e.title}</h3>
                 <p className="mt-2 flex-1 text-sm leading-relaxed text-ink-muted-80">{e.description || 'Community cleanup drive'}</p>
                 <p className="mt-4 text-sm font-medium text-ink">{new Date(e.scheduled_start).toLocaleString()}</p>
                 <p className="mt-1 text-sm text-primary">{e.barangay || 'Citywide'}</p>
-              </article>
+              </Link>
             ))}
           </div>
         )}
