@@ -13,7 +13,8 @@ export default function TabLayout() {
       <Tabs.Screen name="events" options={{ title: 'Events' }} />
       <Tabs.Screen name="camera" options={{ title: 'Camera' }} />
       <Tabs.Screen name="map" options={{ title: 'Map' }} />
-      <Tabs.Screen name="account" options={{ title: 'Account' }} />
+      <Tabs.Screen name="ecoquest" options={{ title: 'EcoQuest' }} />
+      <Tabs.Screen name="account" options={{ title: 'Account', href: null }} />
     </Tabs>
   );
 }

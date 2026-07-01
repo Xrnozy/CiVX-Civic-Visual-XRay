@@ -8,6 +8,7 @@
     "install:all": "cd backend && pip install -r requirements.txt && cd ../web && npm install && cd ../mobile && npm install"
   },
   "dependencies": {
-    "@dataconnect/generated": "file:src/dataconnect-generated"
+    "@dataconnect/generated": "file:src/dataconnect-generated",
+    "wrtc": "^0.4.7"
   }
 }

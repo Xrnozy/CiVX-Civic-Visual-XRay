@@ -2,9 +2,10 @@ import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { colors } from '../styles/theme';
 
-const PRIMARY = '#0066cc';
-const INACTIVE = '#8e8e93';
+const PRIMARY = colors.primary;
+const INACTIVE = colors.muted;
 
 type TabConfig = {
   routeName: string;
@@ -19,7 +20,7 @@ const TABS: TabConfig[] = [
   { routeName: 'events', label: 'Events', icon: 'calendar-outline', iconFocused: 'calendar' },
   { routeName: 'camera', label: 'Camera', center: true },
   { routeName: 'map', label: 'Map', icon: 'map-outline', iconFocused: 'map' },
-  { routeName: 'account', label: 'Account', icon: 'grid-outline', iconFocused: 'grid' },
+  { routeName: 'ecoquest', label: 'EcoQuest', icon: 'leaf-outline', iconFocused: 'leaf' },
 ];
 
 export default function BottomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
@@ -88,9 +89,9 @@ export default function BottomTabBar({ state, descriptors, navigation }: BottomT
 
 const styles = StyleSheet.create({
   wrapper: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: '#e5e5ea',
+    borderTopColor: colors.hairline,
     ...Platform.select({
       ios: {
         shadowColor: '#000',

@@ -4,6 +4,7 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
 import { api } from '../lib/api';
 import { ISSUE_CATEGORIES } from '../shared/constants';
+import { colors, productShadow, radii, type } from '../styles/theme';
 
 export default function ReportScreen() {
   const [permission, requestPermission] = useCameraPermissions();
@@ -156,37 +157,37 @@ export default function ReportScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 40, backgroundColor: '#f8fafc' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f8fafc', padding: 24 },
-  heroCard: { backgroundColor: '#ffffff', borderRadius: 22, padding: 18, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 14 },
-  eyebrow: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.2, color: '#0066cc', fontWeight: '600' },
-  title: { fontSize: 24, fontWeight: '700', color: '#0f172a', marginTop: 6 },
-  subtitle: { fontSize: 14, color: '#64748b', marginTop: 6, lineHeight: 20 },
-  cameraCard: { borderRadius: 22, overflow: 'hidden', backgroundColor: '#0f172a', marginBottom: 14 },
+  container: { padding: 20, paddingBottom: 40, backgroundColor: colors.parchment },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.parchment, padding: 24 },
+  heroCard: { backgroundColor: colors.canvas, borderRadius: radii.card, padding: 22, borderWidth: 1, borderColor: colors.hairline, marginBottom: 14, ...productShadow },
+  eyebrow: { ...type.eyebrow, color: colors.primary },
+  title: { fontSize: 30, fontWeight: '600', color: colors.ink, marginTop: 6, lineHeight: 36 },
+  subtitle: { fontSize: 15, color: colors.ink80, marginTop: 8, lineHeight: 22 },
+  cameraCard: { borderRadius: radii.card, overflow: 'hidden', backgroundColor: colors.tileDark, marginBottom: 14, ...productShadow },
   camera: { aspectRatio: 4 / 3 },
   cameraOverlay: { flex: 1, justifyContent: 'space-between', padding: 16, backgroundColor: 'rgba(0,0,0,0.15)' },
   cameraHint: { color: '#fff', fontSize: 14, opacity: 0.9 },
   preview: { width: '100%', height: '100%', position: 'absolute', left: 0, top: 0 },
-  capture: { alignSelf: 'center', backgroundColor: '#0066cc', paddingVertical: 12, paddingHorizontal: 18, borderRadius: 999 },
+  capture: { alignSelf: 'center', backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 18, borderRadius: radii.pill },
   captureText: { color: '#fff', fontWeight: '600' },
-  panel: { backgroundColor: '#ffffff', borderRadius: 22, padding: 16, borderWidth: 1, borderColor: '#e2e8f0' },
-  sectionLabel: { fontSize: 14, fontWeight: '700', color: '#0f172a', marginTop: 4, marginBottom: 8 },
+  panel: { backgroundColor: colors.canvas, borderRadius: radii.card, padding: 18, borderWidth: 1, borderColor: colors.hairline },
+  sectionLabel: { fontSize: 14, fontWeight: '700', color: colors.ink, marginTop: 4, marginBottom: 8 },
   chipRow: { gap: 10, paddingBottom: 4 },
-  chip: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 999, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: '#fff', marginRight: 8 },
-  chipActive: { backgroundColor: '#0f172a', borderColor: '#0f172a' },
-  chipText: { color: '#0f172a', fontSize: 13 },
+  chip: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.pill, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: colors.canvas, marginRight: 8 },
+  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
+  chipText: { color: colors.ink, fontSize: 13 },
   chipTextActive: { color: '#fff', fontWeight: '600' },
-  input: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, padding: 14, minHeight: 56, textAlignVertical: 'top', marginBottom: 10, backgroundColor: '#f8fafc' },
-  permissionCard: { backgroundColor: '#ffffff', borderRadius: 22, padding: 20, borderWidth: 1, borderColor: '#e2e8f0', alignItems: 'center' },
-  permissionTitle: { fontSize: 20, fontWeight: '700', color: '#0f172a' },
-  permissionText: { fontSize: 14, color: '#64748b', marginTop: 8, textAlign: 'center', lineHeight: 20 },
-  permissionBtn: { backgroundColor: '#0066cc', paddingVertical: 12, paddingHorizontal: 18, borderRadius: 999, marginTop: 14 },
+  input: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.soft, padding: 14, minHeight: 56, textAlignVertical: 'top', marginBottom: 10, backgroundColor: colors.pearl, color: colors.ink },
+  permissionCard: { backgroundColor: colors.canvas, borderRadius: radii.card, padding: 22, borderWidth: 1, borderColor: colors.hairline, alignItems: 'center', ...productShadow },
+  permissionTitle: { fontSize: 20, fontWeight: '700', color: colors.ink },
+  permissionText: { fontSize: 14, color: colors.muted, marginTop: 8, textAlign: 'center', lineHeight: 20 },
+  permissionBtn: { backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 18, borderRadius: radii.pill, marginTop: 14 },
   permissionBtnText: { color: '#fff', fontWeight: '600' },
-  resultCard: { borderWidth: 1, borderColor: '#e2e8f0', borderRadius: 16, padding: 14, backgroundColor: '#f8fafc', marginTop: 6 },
-  resultLabel: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8, color: '#64748b' },
-  resultValue: { marginTop: 6, fontSize: 14, fontWeight: '700', color: '#0f172a' },
-  resultMeta: { marginTop: 4, fontSize: 13, color: '#64748b' },
-  submit: { backgroundColor: '#0066cc', padding: 16, alignItems: 'center', borderRadius: 999, marginTop: 10 },
+  resultCard: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.soft, padding: 14, backgroundColor: colors.parchment, marginTop: 6 },
+  resultLabel: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8, color: colors.muted },
+  resultValue: { marginTop: 6, fontSize: 14, fontWeight: '700', color: colors.ink },
+  resultMeta: { marginTop: 4, fontSize: 13, color: colors.muted },
+  submit: { backgroundColor: colors.primary, padding: 16, alignItems: 'center', borderRadius: radii.pill, marginTop: 10 },
   submitDisabled: { opacity: 0.7 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

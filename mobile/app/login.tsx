@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView } from 'react-native';
-import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform } from 'react-native';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase';
 import { api } from '../lib/api';
 import { router, useLocalSearchParams } from 'expo-router';
+import { colors, productShadow, radii, type } from '../styles/theme';
 
 type Mode = 'signin' | 'register';
 type AccountType = 'citizen' | 'organizer' | 'street_sweeper';
@@ -35,7 +36,7 @@ const PUBLIC_WORKER_TYPES: Record<PublicWorkerType, string> = {
 function authErrorMessage(err: unknown): string {
   const code = (err as { code?: string })?.code;
   if (code === 'auth/operation-not-allowed') {
-    return 'Enable Email/Password in Firebase Console → Authentication.';
+    return 'Enable Email/Password in Firebase Console > Authentication.';
   }
   if (code === 'auth/email-already-in-use') return 'Email already registered. Try signing in.';
   if (code === 'auth/weak-password') return 'Password must be at least 6 characters.';
@@ -76,6 +77,7 @@ export default function LoginScreen() {
   const [publicWorkerType, setPublicWorkerType] = useState<PublicWorkerType | ''>('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!inviteToken) return;
@@ -127,6 +129,7 @@ export default function LoginScreen() {
       return;
     }
     try {
+      setLoading(true);
       const auth = getFirebaseAuth();
       const cred =
         mode === 'register'
@@ -140,12 +143,48 @@ export default function LoginScreen() {
       await afterAuth(token, mode === 'register');
     } catch (err) {
       Alert.alert(mode === 'register' ? 'Registration failed' : 'Login failed', authErrorMessage(err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitGoogle() {
+    if (!isFirebaseConfigured) {
+      Alert.alert('Firebase not configured', 'Set EXPO_PUBLIC_FIREBASE_* in infra/.env');
+      return;
+    }
+    if (Platform.OS !== 'web') {
+      Alert.alert(
+        'Google sign-in setup needed',
+        'The button is matched to the web app. Native Google sign-in needs Expo AuthSession client IDs before it can complete on iOS or Android.',
+      );
+      return;
+    }
+    if (mode === 'register' && !accountType) {
+      Alert.alert('Select account type', 'Choose how you will use CiVX before continuing with Google.');
+      return;
+    }
+    try {
+      setLoading(true);
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const cred = await signInWithPopup(getFirebaseAuth(), provider);
+      const token = await cred.user.getIdToken(true);
+      await afterAuth(token, mode === 'register');
+    } catch (err) {
+      Alert.alert('Google sign-in failed', authErrorMessage(err));
+    } finally {
+      setLoading(false);
     }
   }
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>{mode === 'signin' ? 'Sign in to CiVX' : 'Create your account'}</Text>
+      <View style={styles.card}>
+      <Text style={styles.eyebrow}>Account</Text>
+      <Text style={styles.title}>{mode === 'signin' ? 'Sign in' : 'Join CiVX'}</Text>
+      <Text style={styles.subtitleText}>Access the community map, report issues, and volunteer tools.</Text>
+
       <View style={styles.tabs}>
         <TouchableOpacity style={[styles.tab, mode === 'signin' && styles.tabActive]} onPress={() => setMode('signin')}>
           <Text style={mode === 'signin' ? styles.tabTextActive : styles.tabText}>Sign in</Text>
@@ -153,6 +192,17 @@ export default function LoginScreen() {
         <TouchableOpacity style={[styles.tab, mode === 'register' && styles.tabActive]} onPress={() => setMode('register')}>
           <Text style={mode === 'register' ? styles.tabTextActive : styles.tabText}>Register</Text>
         </TouchableOpacity>
+      </View>
+
+      <TouchableOpacity style={styles.googleButton} onPress={submitGoogle} disabled={loading}>
+        <Text style={styles.googleMark}>G</Text>
+        <Text style={styles.googleText}>Continue with Google</Text>
+      </TouchableOpacity>
+
+      <View style={styles.dividerRow}>
+        <View style={styles.divider} />
+        <Text style={styles.dividerText}>or use email</Text>
+        <View style={styles.divider} />
       </View>
 
       {mode === 'register' && !accountType && (
@@ -209,28 +259,39 @@ export default function LoginScreen() {
 
       <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
       <TextInput style={styles.input} placeholder="Password (min. 6)" value={password} onChangeText={setPassword} secureTextEntry />
-      <TouchableOpacity style={styles.btn} onPress={submit}>
-        <Text style={styles.btnText}>{mode === 'signin' ? 'Sign In' : 'Create Account'}</Text>
+      <TouchableOpacity style={[styles.btn, loading && styles.btnDisabled]} onPress={submit} disabled={loading}>
+        {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.btnText}>{mode === 'signin' ? 'Sign In' : 'Create Account'}</Text>}
       </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 24, justifyContent: 'center' },
-  title: { fontSize: 32, fontWeight: '600', marginBottom: 24 },
-  subtitle: { fontSize: 14, color: '#0066cc', marginBottom: 12, fontWeight: '600' },
-  tabs: { flexDirection: 'row', marginBottom: 16, borderRadius: 999, borderWidth: 1, borderColor: '#e0e0e0', padding: 4 },
+  container: { flexGrow: 1, padding: 20, justifyContent: 'center', backgroundColor: colors.parchment },
+  card: { backgroundColor: colors.canvas, borderRadius: radii.card, borderWidth: 1, borderColor: colors.hairline, padding: 24, ...productShadow },
+  eyebrow: { ...type.eyebrow, color: colors.primary },
+  title: { fontSize: 40, fontWeight: '600', color: colors.ink, marginTop: 4 },
+  subtitleText: { fontSize: 14, color: colors.muted, marginTop: 6, lineHeight: 20, marginBottom: 22 },
+  subtitle: { fontSize: 14, color: colors.primary, marginBottom: 12, fontWeight: '600' },
+  tabs: { flexDirection: 'row', marginBottom: 16, borderRadius: radii.pill, borderWidth: 1, borderColor: colors.hairline, padding: 4, backgroundColor: colors.parchment },
   tab: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 999 },
-  tabActive: { backgroundColor: '#fff' },
-  tabText: { color: '#7a7a7a' },
-  tabTextActive: { color: '#1d1d1f', fontWeight: '600' },
+  tabActive: { backgroundColor: colors.canvas },
+  tabText: { color: colors.muted },
+  tabTextActive: { color: colors.ink, fontWeight: '600' },
+  googleButton: { minHeight: 48, borderRadius: radii.pill, borderWidth: 1, borderColor: colors.hairline, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 10, backgroundColor: colors.canvas },
+  googleMark: { width: 24, height: 24, borderRadius: 12, textAlign: 'center', lineHeight: 24, color: colors.primary, fontWeight: '700', backgroundColor: colors.parchment },
+  googleText: { color: colors.ink, fontSize: 16, fontWeight: '600' },
+  dividerRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 20 },
+  divider: { height: 1, backgroundColor: colors.hairline, flex: 1 },
+  dividerText: { color: colors.muted, fontSize: 12 },
   section: { marginBottom: 12 },
-  choice: { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 16, padding: 14, marginBottom: 8 },
-  choiceActive: { borderColor: '#0066cc', backgroundColor: '#f0f7ff' },
-  choiceTitle: { fontWeight: '600' },
-  fieldLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: '#1d1d1f' },
-  input: { borderWidth: 1, borderColor: '#e0e0e0', borderRadius: 999, padding: 16, marginBottom: 12 },
-  btn: { backgroundColor: '#0066cc', borderRadius: 999, padding: 16, alignItems: 'center', marginTop: 8 },
+  choice: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.card, padding: 16, marginBottom: 10, backgroundColor: colors.canvas },
+  choiceActive: { borderColor: colors.primary, backgroundColor: '#f0f7ff' },
+  choiceTitle: { fontWeight: '600', color: colors.ink },
+  fieldLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: colors.ink },
+  input: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.pill, padding: 16, marginBottom: 12, backgroundColor: colors.canvas, color: colors.ink },
+  btn: { backgroundColor: colors.primary, borderRadius: radii.pill, padding: 16, alignItems: 'center', marginTop: 8, minHeight: 52 },
+  btnDisabled: { opacity: 0.72 },
   btnText: { color: '#fff', fontSize: 17 },
 });

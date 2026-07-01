@@ -18,10 +18,12 @@ import { useVideoInputs } from '../../hooks/useVideoInputs';
 import { api } from '../../lib/api';
 import type { CameraPreviewHandle } from '../../types/camera';
 import type { VideoInput } from '../../types/camera';
+import { colors, radii } from '../../styles/theme';
+import ProfileAvatarButton from '../../components/ProfileAvatarButton';
 
 const CHUNK_MS = 10000;
 const RECORD_TIMEOUT_MS = CHUNK_MS + 8000;
-const PRIMARY = '#0066cc';
+const PRIMARY = colors.primary;
 const ACTION_BLUE = '#5AC8FA';
 
 type Mode = 'passive' | 'drive';
@@ -391,6 +393,7 @@ export default function CameraScreen() {
 
   return (
     <View style={styles.container}>
+      <ProfileAvatarButton />
       <View style={[styles.topBar, { paddingTop: insets.top + 12 }]}>
         <View style={styles.modeToggle}>
           <Pressable
@@ -440,7 +443,7 @@ export default function CameraScreen() {
         {recording && mode === 'passive' && (
           <View style={styles.recordingBadge}>
             <View style={styles.recordingDot} />
-            <Text style={styles.recordingLabel}>Recording · {chunkCount} chunks</Text>
+            <Text style={styles.recordingLabel}>Recording - {chunkCount} chunks</Text>
           </View>
         )}
 
@@ -448,7 +451,7 @@ export default function CameraScreen() {
           <View style={styles.recordingBadge}>
             <View style={styles.recordingDot} />
             <Text style={styles.recordingLabel}>
-              Drive · {driverEvents} bumps · {chunkCount} chunks
+              Drive - {driverEvents} bumps - {chunkCount} chunks
             </Text>
           </View>
         )}
@@ -476,18 +479,18 @@ export default function CameraScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: colors.parchment,
   },
   topBar: {
     paddingHorizontal: 20,
     paddingBottom: 12,
-    backgroundColor: '#f5f5f7',
+    backgroundColor: colors.parchment,
     gap: 12,
   },
   modeToggle: {
     flexDirection: 'row',
-    backgroundColor: '#e5e5ea',
-    borderRadius: 12,
+    backgroundColor: colors.hairline,
+    borderRadius: radii.soft,
     padding: 4,
   },
   modeButton: {
@@ -497,20 +500,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   modeButtonActive: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
   },
   modeText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#8e8e93',
+    color: colors.muted,
   },
   modeTextActive: {
-    color: '#1d1d1f',
+    color: colors.ink,
     fontWeight: '600',
   },
   cameraSection: {
     flex: 1,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
     overflow: 'hidden',
   },
   camera: {
@@ -521,11 +524,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.canvas,
   },
   permissionText: {
     fontSize: 16,
-    color: '#8e8e93',
+    color: colors.muted,
     textAlign: 'center',
     lineHeight: 24,
   },
@@ -554,7 +557,7 @@ const styles = StyleSheet.create({
   },
   bottomBar: {
     height: 72,
-    backgroundColor: '#e5e5ea',
+    backgroundColor: colors.hairline,
     alignItems: 'center',
     justifyContent: 'flex-start',
   },
@@ -567,7 +570,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: -36,
     borderWidth: 4,
-    borderColor: '#ffffff',
+    borderColor: colors.canvas,
   },
   actionButtonActive: {
     backgroundColor: PRIMARY,
