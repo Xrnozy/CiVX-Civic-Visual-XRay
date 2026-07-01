@@ -26,8 +26,9 @@ class ReportIntakeAgent:
         issue_type: str | None = None,
         barangay: str | None = None,
         photo_url: str | None = None,
+        photo_urls: list[str] | None = None,
     ) -> dict[str, Any]:
-        if not photo_payloads and not photo_url:
+        if not photo_payloads and not photo_url and not photo_urls:
             raise ValueError("Photo is required")
         if latitude is None or longitude is None:
             raise ValueError("GPS location is required")
@@ -35,6 +36,9 @@ class ReportIntakeAgent:
         local_paths: list[str] = []
         uploaded_photo_urls: list[str] = []
         detection = None
+
+        if photo_urls:
+            uploaded_photo_urls = [url for url in photo_urls if url]
 
         for index, payload in enumerate(photo_payloads):
             photo_bytes = payload.get("bytes") or b""
@@ -53,10 +57,14 @@ class ReportIntakeAgent:
 
             uploaded_photo_urls.append(self._upload_photo(local_path, user_id, str(filename)))
 
-        if not photo_url and uploaded_photo_urls:
+        if uploaded_photo_urls and not photo_url:
             photo_url = uploaded_photo_urls[0]
         if photo_url and not uploaded_photo_urls:
             uploaded_photo_urls = [photo_url]
+        if photo_url and uploaded_photo_urls and uploaded_photo_urls[0] != photo_url:
+            uploaded_photo_urls = [photo_url, *[url for url in uploaded_photo_urls if url != photo_url]]
+        if photo_url and photo_url not in uploaded_photo_urls:
+            uploaded_photo_urls.insert(0, photo_url)
 
         final_issue = issue_type or (detection.issue_type if detection else "garbage_pile")
         ai_conf = detection.confidence if detection else 0.3

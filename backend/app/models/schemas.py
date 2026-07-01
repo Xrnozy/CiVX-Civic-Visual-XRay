@@ -8,6 +8,7 @@ class ReportCreate(BaseModel):
     issue_type: str | None = None
     barangay: str | None = None
     photo_url: str | None = None
+    photo_urls: list[str] = Field(default_factory=list)
 
 
 class IncidentUpdate(BaseModel):

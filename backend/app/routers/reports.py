@@ -23,6 +23,7 @@ async def create_report(
     photo: UploadFile | None = File(None),
     photos: list[UploadFile] = File(default=[]),
     photo_url: str | None = Form(None),
+    photo_urls: str | None = Form(None),
     user: AuthUser = Depends(get_current_user),
 ):
     uploaded_files = [file for file in ([photo] if photo else []) + photos if file]
@@ -32,6 +33,7 @@ async def create_report(
     photo_payloads: list[dict[str, object]] = []
     for file in uploaded_files:
         photo_payloads.append({"bytes": await file.read(), "filename": file.filename})
+    normalized_photo_urls = [photo_url] if photo_url else []
     agent = ReportIntakeAgent()
     result = agent.process(
         user_id=user.id,
@@ -42,6 +44,7 @@ async def create_report(
         issue_type=issue_type,
         barangay=barangay,
         photo_url=photo_url,
+        photo_urls=normalized_photo_urls,
     )
     log_audit(user.id, "create_report", "report", result["report"]["id"], {"merged": result["merged"]})
     return result
