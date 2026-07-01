@@ -233,7 +233,7 @@ export function CivicMap({
       }
     };
 
-    const loader = new Loader({ apiKey, version: 'weekly' });
+    const loader = new Loader({ apiKey, version: '3.58' });
     loader
       .load()
       .then(() => {

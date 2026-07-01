@@ -182,13 +182,16 @@ Set `EXPO_PUBLIC_API_URL` to your machine IP for device testing.
 python test.py path/to/image.jpg
 ```
 
-Run `supabase/migrations/004_passive_pipeline.sql` for the Redis-based passive incident pipeline (jobs, sessions, evidence tables).
+Run these migrations in Supabase SQL editor (in order):
 
-### 2c. Passive incident pipeline (Redis + workers)
+1. `supabase/migrations/004_passive_pipeline.sql` — jobs, sessions, evidence tables
+2. `supabase/migrations/005_passive_evidence_meta.sql` — yolo hit accumulator + evidence metadata
 
-The passive upload path uses **Redis Streams** and separate worker processes (YOLO primary, LocateAnything verification for medium-confidence hits). Clips are stored locally under `storage/` by default.
+**Prerequisites checklist:**
 
-**Requirements:** Redis 6+ (`redis-server` on `127.0.0.1:6379` or set `REDIS_URL` in `infra/.env`).
+- Redis running (`docker run -d -p 6379:6379 redis:7-alpine` or local `redis-server`)
+- Migrations 004 + 005 applied
+- `npm run build` in `web/` before public demo (Caddy serves `web/dist`)
 
 From the `backend/` directory, start workers in separate terminals (after Redis and the API):
 
@@ -207,8 +210,14 @@ python -m workers.review_worker
 - `POST /api/passive/session/start` — nonce session for trusted uploads
 - `POST /api/passive/upload` — clip upload (returns `job_id` immediately)
 - `GET /api/passive/job/{job_id}` — job status
+- `GET /api/passive/review-queue` — jobs needing manual review
 - `GET /api/system/queue-status` — Redis stream depths + `normal` / `busy` / `overloaded` mode
+- `GET /api/system/failed-jobs` — recent failed clip jobs
 - `POST /api/passive/sessions/{id}/chunks` — mobile adapter (unchanged client; enqueues `clip_jobs`)
+
+**YOLO model:** MVP uses `yolov8n.pt` + COCO mapping; civic fine-tuned weights improve pothole/garbage accuracy. LocateAnything verifies medium-confidence hits.
+
+**Verification:** duplicate SHA256 replay → `duplicate_hash` flag; gallery `capture_mode` → `needs_review`; high conf + 2+ frames + trust ≥ 0.75 → incident on map.
 
 ## API Highlights
 
@@ -227,8 +236,19 @@ Set user role via `POST /api/users/{id}/role?role=lgu_admin` (admin only).
 
 ## Hosting (Local PC + Cloudflare)
 
-1. Run Caddy: `caddy run --config infra/Caddyfile`
-2. Run tunnel: `cloudflared tunnel run --config infra/cloudflared-config.yml civx`
+**Local development:** `npm run dev` in `web/` (port 5173) — fast HMR, Vite proxies `/api` to the backend.
+
+**Public demo (`civx.xrnozy.me`):** serve a static production build through Caddy (not the Vite dev server):
+
+```bash
+cd web && npm run build
+infra\run-caddy.bat
+infra\run-tunnel.bat
+```
+
+Use `infra\run-tunnel.bat` (not bare `cloudflared tunnel run civx`) — the bare command uses Cloudflare's remote config, which may still point at the old Vite dev server on port 5173.
+
+Re-run `npm run build` after any frontend change before the tunnel reflects it. Caddy serves `web/dist` with long-lived caching for hashed `/assets/*` files.
 
 ## Hackathon Demo Flow
 

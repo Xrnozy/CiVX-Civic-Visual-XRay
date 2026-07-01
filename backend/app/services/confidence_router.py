@@ -23,11 +23,33 @@ LOCATE_PRIORITY_CATEGORIES = frozenset({
     "road_crack",
 })
 
+VERIFICATION_BY_ACTION: dict[str, str] = {
+    "auto_candidate": "auto_confirmed",
+    "urgent_unverified": "urgent_unverified",
+    "locate_verify": "pending_locate",
+    "review": "needs_review",
+    "discard": "rejected",
+}
+
+
+def verification_status_for_action(action: RouteAction) -> str:
+    return VERIFICATION_BY_ACTION.get(action, "needs_review")
+
 
 def medium_confidence_band(mode: QueueMode) -> tuple[float, float]:
     if mode == "busy":
         return 0.60, 0.90
     return settings.yolo_confidence_medium, settings.yolo_confidence_high
+
+
+def _locate_allowed(issue_type: str, mode: QueueMode) -> bool:
+    is_priority = issue_type in LOCATE_PRIORITY_CATEGORIES or issue_type in HIGH_RISK_CATEGORIES
+    if mode == "normal":
+        return True
+    if mode == "busy":
+        return is_priority
+    # overloaded: locate only for priority categories (rare path; high-conf auto preferred)
+    return is_priority
 
 
 def route_detection(
@@ -50,9 +72,11 @@ def route_detection(
         return "review"
 
     if med_low <= confidence < med_high:
-        if mode == "overloaded" and issue_type not in LOCATE_PRIORITY_CATEGORIES and not is_high_risk:
+        if not _locate_allowed(issue_type, mode):
             return "review" if trust_score >= settings.trust_threshold_semi else "discard"
-        if trust_score >= settings.trust_threshold_trusted and mode != "overloaded":
+        if mode == "overloaded":
+            return "review" if trust_score >= settings.trust_threshold_semi else "discard"
+        if trust_score >= settings.trust_threshold_trusted:
             return "locate_verify"
         if trust_score >= settings.trust_threshold_semi:
             return "review"

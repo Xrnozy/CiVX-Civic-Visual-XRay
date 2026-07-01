@@ -87,7 +87,6 @@ def _handle(payload: dict) -> None:
             "capture_mode": job.get("capture_mode", "passive_camera"),
             "processing_mode": mode,
             "gps_trace_json": job.get("gps_trace_json") or [],
-            "yolo_confidence": settings.yolo_confidence,
         })
         yolo_count += 1
         frame_index += 1
@@ -98,6 +97,15 @@ def _handle(payload: dict) -> None:
         passive_jobs.update_clip_job(job_id, status="discarded", error_message="No usable frames")
     else:
         passive_jobs.update_clip_job(job_id, status="yolo_processing")
+        enqueue(STREAM_YOLO, {
+            "type": "clip_complete",
+            "job_id": job_id,
+            "frame_count": yolo_count,
+            "processing_mode": mode,
+            "trust_score": float(job.get("trust_score") or 1.0),
+            "capture_mode": job.get("capture_mode", "passive_camera"),
+            "gps_trace_json": job.get("gps_trace_json") or [],
+        })
 
 
 def main() -> None:

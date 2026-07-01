@@ -72,7 +72,7 @@ def enqueue_clip(
         "suspicion_flags": trust.suspicion_flags,
         "processing_mode": mode,
         "gps_trace_json": gps_trace_json or [],
-        "status": "queued",
+        "status": "trust_checking",
     })
 
     redis_queue.enqueue(STREAM_CLIP, {
@@ -87,6 +87,7 @@ def enqueue_clip(
         "processing_mode": mode,
         "gps_trace_json": gps_trace_json or [],
     })
+    passive_jobs.update_clip_job(jid, status="queued")
 
     return {
         "ok": True,

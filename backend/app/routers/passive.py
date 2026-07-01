@@ -234,6 +234,7 @@ async def upload_chunk(
     start_time: str = Form(...),
     end_time: str = Form(...),
     gps_trace_json: str = Form("[]"),
+    device_id: str | None = Form(None),
     video: UploadFile = File(...),
     user: AuthUser = Depends(get_current_user),
 ):
@@ -264,7 +265,7 @@ async def upload_chunk(
         content,
         lat=lat,
         lng=lng,
-        device_id=None,
+        device_id=device_id,
         user_id=user.id,
         capture_mode="passive_camera",
         route_session_id=session_id,

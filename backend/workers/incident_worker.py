@@ -11,19 +11,32 @@ from workers._common import match_gps, process_message
 
 from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.agents.lgu_triage import LGUTriageAgent
+from app.config import settings
 from app.db import get_supabase
 from app.models.civic_issues import PASSIVE_SKIP_INCIDENT_SLUGS, compute_severity
 from app.services import passive_jobs, pipeline_storage
-from app.services.evidence_trust import frame_perceptual_hash
+from app.services.evidence_trust import CAPTURE_MODES_BLOCKED, frame_perceptual_hash
 from app.services.redis_queue import (
     STREAM_CANDIDATES,
+    STREAM_REVIEW,
     ensure_consumer_groups,
+    enqueue,
     read_group,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("incident_worker")
 CONSUMER = f"incident-{os.getpid()}"
+
+
+def _send_to_review(job: dict, payload: dict, reason: str) -> None:
+    job_id = payload["job_id"]
+    passive_jobs.update_clip_job(job_id, status="needs_review", error_message=reason)
+    enqueue(STREAM_REVIEW, {
+        **payload,
+        "verification_status": "needs_review",
+        "review_reason": reason,
+    })
 
 
 def _create_or_merge(payload: dict) -> None:
@@ -34,16 +47,29 @@ def _create_or_merge(payload: dict) -> None:
         return
 
     job = passive_jobs.get_clip_job(job_id) or {}
+    capture_mode = payload.get("capture_mode") or job.get("capture_mode", "passive_camera")
+    if capture_mode in CAPTURE_MODES_BLOCKED:
+        _send_to_review(job, payload, "blocked_capture_mode")
+        return
+
     trace = payload.get("gps_trace_json") or job.get("gps_trace_json") or []
     ts = float(payload.get("frame_timestamp") or 0)
     lat, lng = match_gps(trace, ts, job.get("lat"), job.get("lng"))
     confidence = float(payload.get("confidence") or 0.5)
     trust = float(payload.get("trust_score") or job.get("trust_score") or 1.0)
-    verification = payload.get("verification_status", "yolo_auto")
+    verification = payload.get("verification_status", "auto_confirmed")
     source = payload.get("source", "yolo")
 
-    if verification in ("needs_review", "locate_unsure") or trust < 0.45:
-        passive_jobs.update_clip_job(job_id, status="needs_review")
+    if verification in ("needs_review", "locate_unsure", "pending_locate", "rejected") or trust < settings.trust_threshold_semi:
+        _send_to_review(job, payload, verification)
+        return
+
+    if verification == "auto_confirmed" and trust < settings.trust_threshold_trusted:
+        _send_to_review(job, payload, "semi_trusted_auto_block")
+        return
+
+    if "duplicate_hash" in (job.get("suspicion_flags") or []):
+        _send_to_review(job, payload, "duplicate_hash")
         return
 
     intel = IncidentIntelligenceAgent()
@@ -78,21 +104,16 @@ def _create_or_merge(payload: dict) -> None:
             f"passive/{job_id}_{frame_index}.jpg",
         )
 
-    passive_jobs.insert_evidence({
-        "job_id": job_id,
-        "frame_path": evidence_local or frame_path,
-        "evidence_url": evidence_url,
-        "perceptual_hash": phash,
-        "lat": lat,
-        "lng": lng,
-        "ai_label": issue_type,
-        "ai_confidence": confidence,
-        "trust_score": trust,
-        "source": source,
-        "verification_status": verification,
-        "raw_ai_result": payload.get("raw_ai_result"),
-        "incident_id": incident_id,
-    })
+    passive_jobs.insert_evidence(passive_jobs.build_evidence_row(
+        job,
+        {**payload, "issue_type": issue_type, "confidence": confidence, "trust_score": trust, "verification_status": verification},
+        frame_path=evidence_local or frame_path,
+        evidence_url=evidence_url,
+        perceptual_hash=phash,
+        lat=lat,
+        lng=lng,
+        incident_id=incident_id,
+    ))
 
     bbox = payload.get("bounding_box") or {}
     det_row = {

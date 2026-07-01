@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from collections import defaultdict
 from pathlib import Path
 
 from workers import _bootstrap  # noqa: F401
@@ -13,7 +12,8 @@ from workers import _bootstrap  # noqa: F401
 from app.config import settings
 from app.models.civic_issues import PASSIVE_SKIP_INCIDENT_SLUGS
 from app.services import passive_jobs
-from app.services.confidence_router import route_detection
+from app.services.confidence_router import route_detection, verification_status_for_action
+from app.services.evidence_trust import frame_perceptual_hash
 from app.services.queue_mode import current_mode, yolo_batch_for_mode
 from app.services.redis_queue import (
     STREAM_CANDIDATES,
@@ -45,11 +45,15 @@ def _get_detector() -> YOLODetector:
             candidate = backend_root / model_path
             if candidate.is_file():
                 model_path = str(candidate)
-        _detector = YOLODetector(model_path=model_path, confidence=settings.yolo_confidence)
+        _detector = YOLODetector(
+            model_path=model_path,
+            confidence=settings.yolo_confidence_medium,
+        )
     return _detector
 
 
 def _route_and_enqueue(det_payload: dict, issue_type: str, confidence: float, frames_with_issue: int) -> None:
+    job_id = det_payload["job_id"]
     mode = det_payload.get("processing_mode") or current_mode(stream_lengths())
     trust = float(det_payload.get("trust_score") or 1.0)
     action = route_detection(
@@ -59,40 +63,88 @@ def _route_and_enqueue(det_payload: dict, issue_type: str, confidence: float, fr
         frames_with_issue=frames_with_issue,
         mode=mode,
     )
-    base = {**det_payload, "issue_type": issue_type, "confidence": confidence, "route_action": action}
+    verification = verification_status_for_action(action)
+    base = {
+        **det_payload,
+        "issue_type": issue_type,
+        "confidence": confidence,
+        "route_action": action,
+        "verification_status": verification,
+    }
     if action in ("auto_candidate", "urgent_unverified"):
-        enqueue(STREAM_CANDIDATES, {
-            **base,
-            "verification_status": "yolo_auto" if action == "auto_candidate" else "yolo_urgent",
-            "source": "yolo",
-        })
+        enqueue(STREAM_CANDIDATES, {**base, "source": "yolo"})
     elif action == "locate_verify":
-        enqueue(STREAM_LOCATE, {**base, "verification_status": "pending_locate", "source": "yolo"})
+        enqueue(STREAM_LOCATE, {**base, "source": "yolo"})
     elif action == "review":
-        enqueue(STREAM_REVIEW, {**base, "verification_status": "needs_review", "source": "yolo"})
+        enqueue(STREAM_REVIEW, {**base, "source": "yolo"})
+    elif action == "discard":
+        logger.info("Discarded job=%s issue=%s conf=%.2f frames=%d", job_id, issue_type, confidence, frames_with_issue)
 
 
-def _process_batch(batch: list[tuple[str, dict]]) -> None:
-    paths = [p["frame_path"] for _, p in batch]
+def _flush_job_routing(job_id: str) -> None:
+    hits = passive_jobs.get_yolo_hits(job_id)
+    if not hits:
+        passive_jobs.update_clip_job(job_id, status="discarded", error_message="No YOLO detections")
+        passive_jobs.clear_yolo_hits(job_id)
+        return
+
+    job = passive_jobs.get_clip_job(job_id) or {}
+    for issue_type, entry in hits.items():
+        if issue_type in PASSIVE_SKIP_INCIDENT_SLUGS:
+            continue
+        count = int(entry.get("count", 0))
+        best = entry.get("best") or {}
+        confidence = float(entry.get("best_confidence", 0))
+        if not best:
+            continue
+
+        flags: list[str] = []
+        if count < 2:
+            flags.append("single_frame_only")
+            passive_jobs.append_suspicion_flags(job_id, flags)
+
+        frame_path = best.get("frame_path")
+        if frame_path and os.path.isfile(frame_path):
+            try:
+                phash = frame_perceptual_hash(frame_path)
+                if passive_jobs.perceptual_hash_exists(phash, exclude_job_id=job_id):
+                    flags.append("perceptual_duplicate")
+                    passive_jobs.append_suspicion_flags(job_id, ["perceptual_duplicate"])
+            except Exception:
+                phash = None
+
+        det_payload = {**best, "trust_score": float(best.get("trust_score") or job.get("trust_score") or 1.0)}
+        _route_and_enqueue(det_payload, issue_type, confidence, count)
+
+    passive_jobs.clear_yolo_hits(job_id)
+
+
+def _process_frame_batch(batch: list[tuple[str, dict]]) -> None:
+    frame_items = [(mid, p) for mid, p in batch if p.get("type") != "clip_complete"]
+    if not frame_items:
+        return
+
+    paths = [p["frame_path"] for _, p in frame_items]
     results = _get_detector().detect_batch(paths)
 
-    by_job_issue: dict[tuple[str, str], list[tuple[dict, object]]] = defaultdict(list)
-    for (_, payload), det in zip(batch, results):
+    for (_, payload), det in zip(frame_items, results):
         if det is None or det.issue_type in PASSIVE_SKIP_INCIDENT_SLUGS:
             continue
-        payload = {
+        frame_payload = {
             **payload,
             "bounding_box": det.bounding_box,
             "severity_score": det.severity_score,
             "raw_class": det.raw_class,
+            "issue_type": det.issue_type,
+            "confidence": det.confidence,
             "frame_timestamp": payload.get("frame_timestamp"),
         }
-        by_job_issue[(payload["job_id"], det.issue_type)].append((payload, det))
-
-    for (_job_id, issue_type), items in by_job_issue.items():
-        best = max(items, key=lambda x: x[1].confidence)
-        payload, det = best
-        _route_and_enqueue(payload, issue_type, det.confidence, len(items))
+        passive_jobs.record_yolo_hit(
+            payload["job_id"],
+            det.issue_type,
+            frame_payload,
+            det.confidence,
+        )
 
 
 def main() -> None:
@@ -114,9 +166,18 @@ def main() -> None:
             continue
 
         try:
-            _process_batch(pending)
-            for msg_id, _ in pending:
+            completes = [(mid, p) for mid, p in pending if p.get("type") == "clip_complete"]
+            frames = [(mid, p) for mid, p in pending if p.get("type") != "clip_complete"]
+
+            if frames:
+                _process_frame_batch(frames)
+                for msg_id, _ in frames:
+                    ack(STREAM_YOLO, msg_id)
+
+            for msg_id, payload in completes:
+                _flush_job_routing(payload["job_id"])
                 ack(STREAM_YOLO, msg_id)
+
         except Exception as exc:
             logger.exception("YOLO batch failed")
             for msg_id, payload in pending:

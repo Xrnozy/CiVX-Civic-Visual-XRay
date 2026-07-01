@@ -12,7 +12,10 @@ from app.models.locateanything_worker import get_locateanything_worker
 
 
 class PassiveVideoAgent:
-    """Passive 10s chunk pipeline — VLM detections via AnalyzerAgent (serial queue)."""
+    """DEPRECATED: Superseded by Redis pipeline workers (prefilter/yolo/locate/incident).
+
+    Legacy VLM-only path for in-process chunk_queue; not used in production passive flow.
+    """
 
     def __init__(self):
         self.analyzer = AnalyzerAgent()

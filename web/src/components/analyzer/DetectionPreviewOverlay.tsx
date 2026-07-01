@@ -182,11 +182,6 @@ export function DetectionPreviewOverlay({
         const y = offsetY + naturalBox.y1 * scale;
         const w = (naturalBox.x2 - naturalBox.x1) * scale;
         const h = (naturalBox.y2 - naturalBox.y1) * scale;
-        // #region agent log
-        if (mediaKind === 'video' && index === 0 && Math.floor(currentTime * 2) !== Math.floor((currentTime - 0.01) * 2)) {
-          fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',hypothesisId:'H5',location:'DetectionPreviewOverlay.tsx:drawOverlay',message:'box_drawn',data:{currentTime:Math.round(currentTime*100)/100,box:{x1:region.box.x1,y1:region.box.y1,x2:region.box.x2,y2:region.box.y2},screen:{x:Math.round(x),y:Math.round(y),w:Math.round(w),h:Math.round(h)},srcW,srcH,naturalWidth,naturalHeight},timestamp:Date.now()})}).catch(()=>{});
-        }
-        // #endregion
         const color = region.color || BOX_COLORS[index % BOX_COLORS.length];
 
         drawSegmentationRegion(ctx, x, y, w, h, color);
@@ -220,12 +215,6 @@ export function DetectionPreviewOverlay({
           : null;
       const keyframeChanged = keyTs !== lastKeyframeRef.current;
       lastKeyframeRef.current = keyTs;
-
-      // #region agent log
-      if (Math.floor(t * 4) !== Math.floor((t - 0.25) * 4)) {
-        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',hypothesisId:'H3',location:'DetectionPreviewOverlay.tsx:handleVideoTime',message:'playback_tick',data:{t:Math.round(t*100)/100,keyTs,keyframeChanged,redraw:keyframeChanged,detectionCount:videoDetections?.length??0},timestamp:Date.now()})}).catch(()=>{});
-      }
-      // #endregion
 
       if (keyframeChanged) {
         drawOverlay(t);
@@ -326,10 +315,6 @@ export function regionsForVideoTime(
   const active = valid.filter(
     (det) => Math.abs(det.frame_timestamp! - activeTs) < TIMESTAMP_EPS,
   );
-
-  // #region agent log
-  fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',hypothesisId:'H1-H2-H4',location:'DetectionPreviewOverlay.tsx:regionsForVideoTime',message:'keyframe_snap',data:{currentTime:Math.round(currentTime*100)/100,activeTs,activeCount:active.length,totalDetections:valid.length,keyframes:keyframes.slice(0,8),nearestTs:valid.length?valid.reduce((best,d)=>Math.abs(d.frame_timestamp!-currentTime)<Math.abs(best.frame_timestamp!-currentTime)?d:best).frame_timestamp:null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 
   return active.flatMap((det) =>
     regionsFromDetection(det, det.issue_type.replace(/_/g, ' ')),

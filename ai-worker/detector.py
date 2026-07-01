@@ -68,6 +68,7 @@ class YOLODetector:
             verbose=False,
             batch=len(image_paths),
             half=use_half,
+            imgsz=640,
         )
         out: list[DetectionResult | None] = []
         for res in results:

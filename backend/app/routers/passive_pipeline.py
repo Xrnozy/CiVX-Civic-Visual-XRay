@@ -105,3 +105,18 @@ def get_passive_job(job_id: str, user: AuthUser = Depends(get_current_user)):
 def system_queue_status():
     lengths = stream_lengths()
     return queue_status_payload(lengths)
+
+
+@router.get("/api/passive/review-queue")
+def passive_review_queue(
+    limit: int = 50,
+    user: AuthUser = Depends(get_current_user),
+):
+    jobs = passive_jobs.list_jobs_by_status("needs_review", limit=min(limit, 100))
+    return {"jobs": jobs, "count": len(jobs)}
+
+
+@router.get("/api/system/failed-jobs")
+def system_failed_jobs(limit: int = 20, user: AuthUser = Depends(get_current_user)):
+    jobs = passive_jobs.list_jobs_by_status("failed", limit=min(limit, 100))
+    return {"jobs": jobs, "count": len(jobs)}

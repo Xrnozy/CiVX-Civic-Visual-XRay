@@ -88,13 +88,14 @@ async def analyze_image(
 
 @router.get("/queue/status")
 def analyzer_queue_status():
-    """GPU job queue — all analyzer + passive inference serializes here."""
-    from app.services.chunk_queue import get_chunk_queue
+    """GPU job queue — analyzer test UI serializes VLM inference here."""
     from app.services.gpu_queue import status as gpu_status
+    from app.services.queue_mode import queue_status_payload
+    from app.services.redis_queue import stream_lengths
 
     return {
         "gpu": gpu_status(),
-        "passive_chunks": get_chunk_queue().status(),
+        "passive_pipeline": queue_status_payload(stream_lengths()),
     }
 
 

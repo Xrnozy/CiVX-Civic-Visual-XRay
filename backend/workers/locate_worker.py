@@ -70,13 +70,13 @@ def _handle(payload: dict) -> None:
     if confirmed:
         enqueue(STREAM_CANDIDATES, {
             **payload,
-            "verification_status": "locate_confirmed",
+            "verification_status": "ai_verified",
             "source": "locate_anything",
         })
     else:
         enqueue(STREAM_REVIEW, {
             **payload,
-            "verification_status": "locate_unsure",
+            "verification_status": "needs_review",
             "source": "locate_anything",
         })
 

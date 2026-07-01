@@ -1,4 +1,7 @@
-"""Serial passive-video chunk queue — one GPU job at a time, survives restarts."""
+"""DEPRECATED: Superseded by Redis Streams workers (see backend/workers/).
+
+Serial passive-video chunk queue — kept for reference only; not started from main.py.
+"""
 
 from __future__ import annotations
 
