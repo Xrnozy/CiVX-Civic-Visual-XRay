@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     duplicate_radius_m: float = 25.0
     attendance_gps_radius_m: float = 100.0
     demo_lgu_auto_role: bool = True
+    google_maps_api_key: str = ""
 
     @field_validator(
         "supabase_url",
