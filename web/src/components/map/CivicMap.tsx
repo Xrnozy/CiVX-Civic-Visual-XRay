@@ -21,6 +21,7 @@ interface MarkerData {
   preview_ai_suggested_type?: string;
   preview_ai_confidence?: number;
   preview_created_at?: string;
+  barangay?: string;
 }
 
 interface Props {
@@ -91,31 +92,40 @@ export function CivicMap({
       .replace(/'/g, '&#39;');
   }
 
-  function previewCardHtml(marker: MarkerData, expandButtonId: string): string {
-    const title = escapeHtml((marker.primary_issue_type || marker.title || 'Incident').replace(/_/g, ' '));
+  function formatDateBadge(iso?: string): string {
+    if (!iso) return '—';
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return '—';
+    const month = date.toLocaleString('en-US', { month: 'short' }).toUpperCase();
+    return `${month} ${date.getDate()}`;
+  }
+
+  function previewCardHtml(marker: MarkerData, cardId: string): string {
+    const title = escapeHtml((marker.primary_issue_type || marker.title || 'Incident').replace(/_/g, ' ').toUpperCase());
+    const location = escapeHtml((marker.barangay || 'Unknown location').toUpperCase());
     const submitter = marker.submitter_type === 'lgu' ? 'LGU' : 'Community member';
+    const sourceLabel = escapeHtml(
+      (marker.source || 'unknown').replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()),
+    );
     const submittedAt = marker.preview_created_at || marker.created_at;
-    const createdLabel = submittedAt ? escapeHtml(new Date(submittedAt).toLocaleString()) : 'Unknown';
-    const aiLabel = marker.preview_ai_suggested_type
-      ? `${escapeHtml(marker.preview_ai_suggested_type.replace(/_/g, ' '))}${typeof marker.preview_ai_confidence === 'number' ? ` (${Math.round(marker.preview_ai_confidence * 100)}%)` : ''}`
-      : 'Pending';
-    const lat = Number.isFinite(marker.latitude) ? marker.latitude.toFixed(6) : 'Unknown';
-    const lng = Number.isFinite(marker.longitude) ? marker.longitude.toFixed(6) : 'Unknown';
-    const image = marker.preview_photo_url
-      ? `<img src="${escapeHtml(marker.preview_photo_url)}" alt="Incident preview" style="height:58px;width:58px;border-radius:10px;object-fit:cover;flex-shrink:0;" />`
-      : `<div style="height:58px;width:58px;border-radius:10px;background:#f5f5f7;color:#7a7a7a;display:flex;align-items:center;justify-content:center;font-size:11px;">No photo</div>`;
+    const dateBadge = escapeHtml(formatDateBadge(submittedAt));
+    const subtitle = `${submitter} · ${sourceLabel}`;
+    const photoUrl = marker.preview_photo_url ? escapeHtml(marker.preview_photo_url) : '';
+    const bgStyle = photoUrl
+      ? `background-image:url('${photoUrl}');background-size:cover;background-position:center;`
+      : 'background:linear-gradient(145deg,#667085 0%,#344054 100%);';
+
     return `
-      <div style="width:248px;color:#1d1d1f;font-family:Inter,system-ui,-apple-system,sans-serif;line-height:1.35;">
-        <div style="display:flex;gap:10px;align-items:flex-start;">
-          ${image}
-          <div style="min-width:0;">
-            <div style="font-size:13px;font-weight:700;text-transform:capitalize;">${title}</div>
-            <div style="margin-top:3px;font-size:11px;color:#7a7a7a;">${submitter} · ${createdLabel}</div>
-            <div style="margin-top:6px;font-size:11px;color:#333;">AI: ${aiLabel}</div>
+      <div id="${cardId}" style="width:256px;height:256px;position:relative;border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 18px 40px rgba(0,0,0,0.28);${bgStyle}font-family:Inter,system-ui,-apple-system,sans-serif;">
+        <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.38) 0%,rgba(0,0,0,0.08) 38%,rgba(0,0,0,0.08) 52%,rgba(0,0,0,0.78) 100%);"></div>
+        <div style="position:absolute;top:16px;left:16px;right:16px;font-size:10px;font-weight:600;letter-spacing:0.08em;line-height:1.35;color:rgba(255,255,255,0.95);text-shadow:0 1px 4px rgba(0,0,0,0.55);">${location}</div>
+        <div style="position:absolute;bottom:16px;left:16px;right:16px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;">
+          <div style="min-width:0;padding-right:4px;">
+            <div style="font-size:22px;font-weight:800;line-height:1.05;letter-spacing:0.01em;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,0.5);">${title}</div>
+            <div style="margin-top:8px;font-size:11px;font-weight:500;color:rgba(255,255,255,0.94);text-shadow:0 1px 4px rgba(0,0,0,0.45);">${subtitle}</div>
           </div>
+          <div style="flex-shrink:0;border-radius:999px;background:rgba(0,0,0,0.62);backdrop-filter:blur(4px);padding:6px 11px;font-size:10px;font-weight:700;letter-spacing:0.05em;color:#fff;">${dateBadge}</div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#333;">${lat}, ${lng}</div>
-        <button id="${expandButtonId}" style="margin-top:8px;width:100%;border:0;border-radius:999px;background:#0066cc;color:#fff;padding:7px 10px;font-size:12px;font-weight:600;cursor:pointer;">Expand details</button>
       </div>
     `;
   }
@@ -325,16 +335,42 @@ export function CivicMap({
     }
 
     if (!infoWindowRef.current) {
-      infoWindowRef.current = new gmaps.InfoWindow();
+      infoWindowRef.current = new gmaps.InfoWindow({ headerDisabled: true });
     }
-    const buttonId = `civx-expand-${markerData.id}`;
-    infoWindowRef.current.setContent(previewCardHtml(markerData, buttonId));
+    const cardId = `civx-preview-${markerData.id}`;
+    infoWindowRef.current.setContent(previewCardHtml(markerData, cardId));
     infoWindowRef.current.open({ map, anchor: marker });
 
     gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', () => {
-      const button = document.getElementById(buttonId);
-      if (!button) return;
-      button.onclick = () => onPreviewExpand?.(markerData.id);
+      const iwRoot = document.querySelector('.gm-style-iw') as HTMLElement | null;
+      const iwOuter = document.querySelector('.gm-style-iw-c') as HTMLElement | null;
+      const iwInner = document.querySelector('.gm-style-iw-d') as HTMLElement | null;
+      const iwHeader = document.querySelector('.gm-style-iw-ch') as HTMLElement | null;
+      if (iwRoot) {
+        iwRoot.style.padding = '0';
+        iwRoot.style.maxWidth = 'none';
+      }
+      if (iwHeader) {
+        iwHeader.style.display = 'none';
+      }
+      if (iwOuter) {
+        iwOuter.style.padding = '0';
+        iwOuter.style.borderRadius = '18px';
+        iwOuter.style.overflow = 'hidden';
+        iwOuter.style.boxShadow = 'none';
+        iwOuter.style.background = 'transparent';
+      }
+      if (iwInner) {
+        iwInner.style.overflow = 'hidden';
+        iwInner.style.maxHeight = 'none';
+        iwInner.style.padding = '0';
+      }
+      document.querySelectorAll('.gm-ui-hover-effect').forEach((node) => {
+        (node as HTMLElement).style.display = 'none';
+      });
+      const card = document.getElementById(cardId);
+      if (!card) return;
+      card.onclick = () => onPreviewExpand?.(markerData.id);
     });
   }, [map, markers, selectedMarkerId, onPreviewExpand]);
 

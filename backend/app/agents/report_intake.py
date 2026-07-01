@@ -7,6 +7,7 @@ from typing import Any
 from app.agents.ai_detection import AIDetectionAgent
 from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.agents.lgu_triage import LGUTriageAgent
+from app.config import settings
 from app.db import get_supabase
 
 
@@ -119,7 +120,7 @@ class ReportIntakeAgent:
 
     def _upload_photo(self, local_path: str, user_id: str, filename: str | None = None) -> str:
         sb = get_supabase()
-        bucket = "report-photos"
+        bucket = settings.supabase_report_photos_bucket
         suffix = Path(filename).suffix if filename else ".jpg"
         key = f"{user_id}/{uuid.uuid4().hex}{suffix or '.jpg'}"
         with open(local_path, "rb") as f:
