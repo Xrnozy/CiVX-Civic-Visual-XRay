@@ -7,17 +7,17 @@ import type { CameraPreviewHandle } from '../../types/camera';
 
 type Props = {
   deviceId?: string;
-  streamUrl?: string;
   active: boolean;
 };
 
 type PendingRecord = {
   resolve: (value: { uri: string } | undefined) => void;
   reject: (reason?: unknown) => void;
+  timeout: ReturnType<typeof setTimeout>;
 };
 
 const ExternalCameraWebView = forwardRef<CameraPreviewHandle, Props>(function ExternalCameraWebView(
-  { deviceId, streamUrl, active },
+  { deviceId, active },
   ref,
 ) {
   const webViewRef = useRef<WebView>(null);
@@ -32,30 +32,29 @@ const ExternalCameraWebView = forwardRef<CameraPreviewHandle, Props>(function Ex
   useEffect(() => {
     readyRef.current = false;
     if (!loaded || !active) return;
-
-    if (streamUrl) {
-      post({ type: 'init-stream', streamUrl });
-      return;
-    }
-
     post({ type: 'init-device', deviceId: deviceId ?? null });
-  }, [active, deviceId, loaded, streamUrl]);
+  }, [active, deviceId, loaded]);
 
   useImperativeHandle(ref, () => ({
     async recordAsync({ maxDuration }) {
-      if (!readyRef.current || streamUrl) {
-        return undefined;
+      if (!readyRef.current) {
+        throw new Error('External camera is still connecting. Wait for the preview, then try recording again.');
       }
 
       return new Promise((resolve, reject) => {
-        pendingRecordRef.current = { resolve, reject };
+        const timeout = setTimeout(() => {
+          pendingRecordRef.current?.reject(new Error('External camera recording timed out.'));
+          pendingRecordRef.current = null;
+          post({ type: 'stop-recording' });
+        }, (maxDuration + 8) * 1000);
+        pendingRecordRef.current = { resolve, reject, timeout };
         post({ type: 'record', maxDuration });
       });
     },
     async stopRecording() {
       post({ type: 'stop' });
     },
-  }), [streamUrl]);
+  }), []);
 
   async function handleMessage(event: WebViewMessageEvent) {
     try {
@@ -78,6 +77,7 @@ const ExternalCameraWebView = forwardRef<CameraPreviewHandle, Props>(function Ex
 
       if (message.type === 'error') {
         if (pendingRecordRef.current) {
+          clearTimeout(pendingRecordRef.current.timeout);
           pendingRecordRef.current.reject(new Error(message.message || 'Camera failed.'));
           pendingRecordRef.current = null;
         }
@@ -90,10 +90,16 @@ const ExternalCameraWebView = forwardRef<CameraPreviewHandle, Props>(function Ex
         await FileSystem.writeAsStringAsync(uri, message.base64, {
           encoding: FileSystem.EncodingType.Base64,
         });
+        if (pendingRecordRef.current) {
+          clearTimeout(pendingRecordRef.current.timeout);
+        }
         pendingRecordRef.current?.resolve({ uri });
         pendingRecordRef.current = null;
       }
     } catch (error) {
+      if (pendingRecordRef.current) {
+        clearTimeout(pendingRecordRef.current.timeout);
+      }
       pendingRecordRef.current?.reject(error);
       pendingRecordRef.current = null;
     }

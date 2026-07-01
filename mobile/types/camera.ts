@@ -1,11 +1,10 @@
-export type CameraSourceKind = 'phone-back' | 'phone-front' | 'external-device' | 'external-stream';
+export type CameraSourceKind = 'phone-back' | 'phone-front' | 'external-device';
 
 export type VideoInput = {
   id: string;
   label: string;
   kind: CameraSourceKind;
   deviceId?: string;
-  streamUrl?: string;
 };
 
 export type CameraRecorderRef = {

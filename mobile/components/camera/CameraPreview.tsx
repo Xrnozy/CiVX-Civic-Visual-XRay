@@ -23,27 +23,11 @@ const CameraPreview = forwardRef<CameraPreviewHandle, Props>(function CameraPrev
     return <ExpoCameraPreview ref={ref} facing="front" active={active} />;
   }
 
-  if (source.kind === 'external-stream') {
-    return (
-      <ExternalCameraWebView
-        ref={ref}
-        active={active}
-        streamUrl={source.streamUrl}
-      />
-    );
-  }
-
   if (Platform.OS === 'web') {
     return <WebMediaCameraPreview ref={ref} deviceId={source.deviceId} active={active} />;
   }
 
-  return (
-    <ExternalCameraWebView
-      ref={ref}
-      active={active}
-      deviceId={source.deviceId}
-    />
-  );
+  return <ExternalCameraWebView ref={ref} deviceId={source.deviceId} active={active} />;
 });
 
 export default CameraPreview;

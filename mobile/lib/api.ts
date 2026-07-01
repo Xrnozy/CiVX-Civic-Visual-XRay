@@ -34,6 +34,7 @@ function resolveApiBaseUrl() {
 }
 
 const API_URL = resolveApiBaseUrl();
+const DEFAULT_TIMEOUT_MS = 15000;
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = await AsyncStorage.getItem('civx_token');
@@ -42,7 +43,20 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
   }
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_URL}${path}`, { ...options, headers, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Connection timed out. Check that the CiVX backend is running and reachable from this phone.');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || `Request failed with status ${res.status}`);

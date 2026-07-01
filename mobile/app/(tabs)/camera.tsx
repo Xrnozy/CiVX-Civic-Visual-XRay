@@ -14,17 +14,28 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CameraPreview from '../../components/camera/CameraPreview';
 import CameraSourcePicker from '../../components/camera/CameraSourcePicker';
-import { getExternalStreamUrl, saveExternalStreamUrl, useVideoInputs } from '../../hooks/useVideoInputs';
+import { useVideoInputs } from '../../hooks/useVideoInputs';
 import { api } from '../../lib/api';
 import type { CameraPreviewHandle } from '../../types/camera';
 import type { VideoInput } from '../../types/camera';
 
 const CHUNK_MS = 10000;
+const RECORD_TIMEOUT_MS = CHUNK_MS + 8000;
 const PRIMARY = '#0066cc';
 const ACTION_BLUE = '#5AC8FA';
 
 type Mode = 'passive' | 'drive';
 type GpsPoint = { t: number; lat: number; lng: number };
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs);
+    promise
+      .then(resolve)
+      .catch(reject)
+      .finally(() => clearTimeout(timeout));
+  });
+}
 
 export default function CameraScreen() {
   const insets = useSafeAreaInsets();
@@ -39,7 +50,6 @@ export default function CameraScreen() {
   const [chunkCount, setChunkCount] = useState(0);
   const [driverEvents, setDriverEvents] = useState(0);
   const [selectedSourceId, setSelectedSourceId] = useState('phone-back');
-  const [streamUrlDraft, setStreamUrlDraft] = useState('');
 
   const { inputs, loading: inputsLoading, refresh: refreshInputs } = useVideoInputs(mode === 'drive');
 
@@ -60,10 +70,6 @@ export default function CameraScreen() {
     () => inputs.find((input) => input.id === selectedSourceId) ?? inputs[0],
     [inputs, selectedSourceId],
   );
-
-  useEffect(() => {
-    void getExternalStreamUrl().then(setStreamUrlDraft);
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -160,7 +166,11 @@ export default function CameraScreen() {
       const t = chunkIndexRef.current * (CHUNK_MS / 1000);
       gpsTraceRef.current.push({ t, lat: loc.coords.latitude, lng: loc.coords.longitude });
 
-      const recorded = await passiveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 });
+      const recorded = await withTimeout(
+        passiveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 }),
+        RECORD_TIMEOUT_MS,
+        'Phone camera recording timed out.',
+      );
       const uri = recorded?.uri;
       if (!uri) throw new Error('No video chunk was produced.');
 
@@ -175,6 +185,11 @@ export default function CameraScreen() {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       await AsyncStorage.setItem('chunk_queue', JSON.stringify(queue));
+      try {
+        passiveCameraRef.current?.stopRecording();
+      } catch {
+        // ignore recorder cleanup errors
+      }
     } finally {
       activeChunkRef.current = false;
     }
@@ -182,13 +197,16 @@ export default function CameraScreen() {
 
   async function captureDriveChunk() {
     if (!sessionIdRef.current || !driveCameraRef.current || activeChunkRef.current || !recordingRef.current) return;
-    if (selectedSource?.kind === 'external-stream') return;
 
     activeChunkRef.current = true;
     try {
-      const recorded = await driveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 });
+      const recorded = await withTimeout(
+        driveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 }),
+        RECORD_TIMEOUT_MS,
+        'Camera recording timed out.',
+      );
       const uri = recorded?.uri;
-      if (!uri) return;
+      if (!uri) throw new Error('No video chunk was produced.');
 
       await uploadChunk(uri, chunkIndexRef.current);
       chunkIndexRef.current += 1;
@@ -201,6 +219,7 @@ export default function CameraScreen() {
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       await AsyncStorage.setItem('chunk_queue', JSON.stringify(queue));
+      await driveCameraRef.current?.stopRecording().catch(() => undefined);
     } finally {
       activeChunkRef.current = false;
     }
@@ -254,7 +273,7 @@ export default function CameraScreen() {
         void capturePassiveChunk();
       }, CHUNK_MS);
 
-      await capturePassiveChunk();
+      void capturePassiveChunk();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to start passive recording.';
       Alert.alert('Recording unavailable', message);
@@ -297,7 +316,7 @@ export default function CameraScreen() {
         void captureDriveChunk();
       }, CHUNK_MS);
 
-      await captureDriveChunk();
+      void captureDriveChunk();
 
       Accelerometer.setUpdateInterval(200);
       accelSubRef.current = Accelerometer.addListener(({ x, y, z }) => {
@@ -337,13 +356,6 @@ export default function CameraScreen() {
   function handleSelectSource(input: VideoInput) {
     if (recording || busy) return;
     setSelectedSourceId(input.id);
-  }
-
-  async function handleSaveStreamUrl() {
-    await saveExternalStreamUrl(streamUrlDraft);
-    await refreshInputs();
-    setSelectedSourceId('external-stream');
-    Alert.alert('Stream saved', 'External camera stream URL saved for Drive mode.');
   }
 
   async function handleActionPress() {
@@ -401,9 +413,7 @@ export default function CameraScreen() {
             selectedId={selectedSourceId}
             loading={inputsLoading}
             onSelect={handleSelectSource}
-            streamUrl={streamUrlDraft}
-            onStreamUrlChange={setStreamUrlDraft}
-            onSaveStreamUrl={() => { void handleSaveStreamUrl(); }}
+            onRefresh={() => { void refreshInputs(); }}
           />
         ) : null}
       </View>
@@ -415,10 +425,7 @@ export default function CameraScreen() {
           ) : (
             <CameraPreview
               ref={driveCameraRef}
-              source={{
-                ...drivePreviewSource,
-                streamUrl: drivePreviewSource.kind === 'external-stream' ? streamUrlDraft : drivePreviewSource.streamUrl,
-              }}
+              source={drivePreviewSource}
               active
             />
           )
@@ -445,12 +452,6 @@ export default function CameraScreen() {
             </Text>
           </View>
         )}
-
-        {mode === 'drive' && drivePreviewSource.kind === 'external-stream' && !streamUrlDraft ? (
-          <View style={styles.helperBadge}>
-            <Text style={styles.helperText}>Add an external stream URL to preview your webcam feed.</Text>
-          </View>
-        ) : null}
       </View>
 
       <View style={styles.bottomBar}>
@@ -539,22 +540,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
-  },
-  helperBadge: {
-    position: 'absolute',
-    bottom: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.65)',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  helperText: {
-    color: '#ffffff',
-    fontSize: 13,
-    textAlign: 'center',
-    lineHeight: 18,
   },
   recordingDot: {
     width: 8,

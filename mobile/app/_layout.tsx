@@ -1,6 +1,4 @@
 import { Stack } from 'expo-router';
-import { Platform } from 'react-native';
-import { useEffect } from 'react';
 
 const headerOptions = {
   headerStyle: { backgroundColor: '#ffffff' },
@@ -10,16 +8,6 @@ const headerOptions = {
 };
 
 export default function RootLayout() {
-  useEffect(() => {
-    if (Platform.OS === 'web') return;
-    try {
-      const { registerGlobals } = require('react-native-webrtc');
-      registerGlobals();
-    } catch {
-      // WebRTC native module is unavailable in Expo Go.
-    }
-  }, []);
-
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(tabs)" />

@@ -1,4 +1,4 @@
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { VideoInput } from '../../types/camera';
 
 type Props = {
@@ -6,9 +6,7 @@ type Props = {
   selectedId: string;
   loading?: boolean;
   onSelect: (input: VideoInput) => void;
-  streamUrl: string;
-  onStreamUrlChange: (value: string) => void;
-  onSaveStreamUrl: () => void;
+  onRefresh: () => void;
 };
 
 export default function CameraSourcePicker({
@@ -16,18 +14,27 @@ export default function CameraSourcePicker({
   selectedId,
   loading,
   onSelect,
-  streamUrl,
-  onStreamUrlChange,
-  onSaveStreamUrl,
+  onRefresh,
 }: Props) {
-  const selected = inputs.find((input) => input.id === selectedId);
+  const externalCount = inputs.filter((input) => input.kind === 'external-device').length;
 
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Camera source</Text>
-        {loading ? <ActivityIndicator size="small" color="#0066cc" /> : null}
+        <View style={styles.headerActions}>
+          {loading ? <ActivityIndicator size="small" color="#0066cc" /> : null}
+          <Pressable style={styles.refreshButton} onPress={onRefresh}>
+            <Text style={styles.refreshText}>Refresh</Text>
+          </Pressable>
+        </View>
       </View>
+
+      <Text style={styles.help}>
+        {externalCount > 0
+          ? 'External cameras are connected directly inside CiVX. Select one below.'
+          : 'Connect a USB webcam with an OTG adapter, tap Refresh, then choose USB / External camera.'}
+      </Text>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
         {inputs.map((input) => {
@@ -45,25 +52,6 @@ export default function CameraSourcePicker({
           );
         })}
       </ScrollView>
-
-      {selected?.kind === 'external-stream' ? (
-        <View style={styles.streamBox}>
-          <Text style={styles.streamHelp}>
-            Paste an MJPEG or HTTP stream URL from your connected webcam or dashcam app.
-          </Text>
-          <TextInput
-            value={streamUrl}
-            onChangeText={onStreamUrlChange}
-            placeholder="http://192.168.1.10:8080/video"
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={styles.input}
-          />
-          <Pressable style={styles.saveButton} onPress={onSaveStreamUrl}>
-            <Text style={styles.saveButtonText}>Save stream URL</Text>
-          </Pressable>
-        </View>
-      ) : null}
     </View>
   );
 }
@@ -77,12 +65,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
   title: {
     fontSize: 13,
     fontWeight: '600',
     color: '#636366',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
+  },
+  help: {
+    fontSize: 13,
+    color: '#636366',
+    lineHeight: 18,
+  },
+  refreshButton: {
+    backgroundColor: '#ffffff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#d1d1d6',
+  },
+  refreshText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0066cc',
   },
   chips: {
     gap: 8,
@@ -105,38 +116,5 @@ const styles = StyleSheet.create({
   },
   chipTextActive: {
     color: '#ffffff',
-  },
-  streamBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 12,
-    gap: 8,
-  },
-  streamHelp: {
-    fontSize: 13,
-    color: '#636366',
-    lineHeight: 18,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: '#d1d1d6',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    fontSize: 14,
-    color: '#1d1d1f',
-    backgroundColor: '#fafafa',
-  },
-  saveButton: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#0066cc',
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-  },
-  saveButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '600',
   },
 });

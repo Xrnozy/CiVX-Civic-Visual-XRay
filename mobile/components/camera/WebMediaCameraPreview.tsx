@@ -23,7 +23,7 @@ const WebMediaCameraPreview = forwardRef<CameraPreviewHandle, Props>(function We
 
     async function start() {
       const constraints: MediaStreamConstraints = {
-        audio: true,
+        audio: false,
         video: deviceId
           ? { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }
           : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },

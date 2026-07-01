@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Platform } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getNativeWebRtcMediaDevices } from '../lib/nativeWebRtc';
 import type { VideoInput } from '../types/camera';
-
-const STREAM_URL_KEY = 'civx_external_stream_url';
 
 const PHONE_INPUTS: VideoInput[] = [
   { id: 'phone-back', label: 'Phone rear camera', kind: 'phone-back' },
   { id: 'phone-front', label: 'Phone front camera', kind: 'phone-front' },
 ];
+
+const EXTERNAL_AUTO: VideoInput = {
+  id: 'external-auto',
+  label: 'USB / External camera',
+  kind: 'external-device',
+};
 
 function isExternalLabel(label: string) {
   const normalized = label.toLowerCase();
@@ -22,26 +26,13 @@ function isExternalLabel(label: string) {
   );
 }
 
-async function enumerateWebInputs(): Promise<VideoInput[]> {
-  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
-    return PHONE_INPUTS;
-  }
-
-  try {
-    await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-  } catch {
-    // Permission may be denied; still try to list devices.
-  }
-
-  const devices = await navigator.mediaDevices.enumerateDevices();
-  const inputs: VideoInput[] = [...PHONE_INPUTS];
-
+function appendExternalDevices(inputs: VideoInput[], devices: MediaDeviceInfo[]) {
   devices
     .filter((device) => device.kind === 'videoinput')
     .forEach((device, index) => {
       const label = device.label || `Camera ${index + 1}`;
-      const phoneLike = /front|back|facetime|integrated/i.test(label);
-      if (phoneLike) return;
+      const phoneLike = /front|back|facetime|integrated|wide|telephoto|selfie/i.test(label);
+      if (phoneLike && !isExternalLabel(label)) return;
 
       inputs.push({
         id: `external-device:${device.deviceId}`,
@@ -50,43 +41,46 @@ async function enumerateWebInputs(): Promise<VideoInput[]> {
         deviceId: device.deviceId,
       });
     });
+}
+
+async function enumerateWebInputs(): Promise<VideoInput[]> {
+  if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+    return [...PHONE_INPUTS, EXTERNAL_AUTO];
+  }
+
+  try {
+    await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  } catch {
+    // Permission may be denied; still try to list devices.
+  }
+
+  const inputs: VideoInput[] = [...PHONE_INPUTS];
+  appendExternalDevices(inputs, await navigator.mediaDevices.enumerateDevices());
+
+  if (!inputs.some((input) => input.kind === 'external-device')) {
+    inputs.push(EXTERNAL_AUTO);
+  }
 
   return inputs;
 }
 
 async function enumerateNativeInputs(): Promise<VideoInput[]> {
   const inputs: VideoInput[] = [...PHONE_INPUTS];
+  const mediaDevices = getNativeWebRtcMediaDevices();
 
-  try {
-    const { mediaDevices, registerGlobals } = require('react-native-webrtc');
-    registerGlobals();
-    await mediaDevices.getUserMedia({ video: true, audio: true });
-    const devices = await mediaDevices.enumerateDevices();
-    const videoDevices = devices.filter((device: MediaDeviceInfo) => device.kind === 'videoinput');
-
-    videoDevices.forEach((device: MediaDeviceInfo, index: number) => {
-      const label = device.label || `Camera ${index + 1}`;
-      const phoneLike = /front|back|wide|telephoto|selfie/i.test(label);
-      if (phoneLike) return;
-
-      inputs.push({
-        id: `external-device:${device.deviceId}`,
-        label: isExternalLabel(label) ? label : `External: ${label}`,
-        kind: 'external-device',
-        deviceId: device.deviceId,
-      });
-    });
-  } catch {
-    // WebRTC native module unavailable in Expo Go.
+  if (mediaDevices) {
+    try {
+      const stream = await mediaDevices.getUserMedia({ video: true, audio: false });
+      stream.getTracks().forEach((track) => track.stop());
+      appendExternalDevices(inputs, await mediaDevices.enumerateDevices() as MediaDeviceInfo[]);
+    } catch {
+      // Fall back to the built-in external camera option below.
+    }
   }
 
-  const savedStreamUrl = await AsyncStorage.getItem(STREAM_URL_KEY);
-  inputs.push({
-    id: 'external-stream',
-    label: savedStreamUrl ? 'External stream (saved URL)' : 'External stream URL',
-    kind: 'external-stream',
-    streamUrl: savedStreamUrl ?? '',
-  });
+  if (!inputs.some((input) => input.kind === 'external-device')) {
+    inputs.push(EXTERNAL_AUTO);
+  }
 
   return inputs;
 }
@@ -113,17 +107,4 @@ export function useVideoInputs(enabled: boolean) {
   }, [refresh]);
 
   return { inputs, loading, refresh };
-}
-
-export async function saveExternalStreamUrl(url: string) {
-  const trimmed = url.trim();
-  if (trimmed) {
-    await AsyncStorage.setItem(STREAM_URL_KEY, trimmed);
-  } else {
-    await AsyncStorage.removeItem(STREAM_URL_KEY);
-  }
-}
-
-export async function getExternalStreamUrl() {
-  return (await AsyncStorage.getItem(STREAM_URL_KEY)) ?? '';
 }
