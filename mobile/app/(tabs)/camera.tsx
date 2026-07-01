@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -12,7 +12,12 @@ import * as Location from 'expo-location';
 import { Accelerometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import CameraPreview from '../../components/camera/CameraPreview';
+import CameraSourcePicker from '../../components/camera/CameraSourcePicker';
+import { getExternalStreamUrl, saveExternalStreamUrl, useVideoInputs } from '../../hooks/useVideoInputs';
 import { api } from '../../lib/api';
+import type { CameraPreviewHandle } from '../../types/camera';
+import type { VideoInput } from '../../types/camera';
 
 const CHUNK_MS = 10000;
 const PRIMARY = '#0066cc';
@@ -33,16 +38,32 @@ export default function CameraScreen() {
   const [busy, setBusy] = useState(false);
   const [chunkCount, setChunkCount] = useState(0);
   const [driverEvents, setDriverEvents] = useState(0);
+  const [selectedSourceId, setSelectedSourceId] = useState('phone-back');
+  const [streamUrlDraft, setStreamUrlDraft] = useState('');
+
+  const { inputs, loading: inputsLoading, refresh: refreshInputs } = useVideoInputs(mode === 'drive');
 
   const chunkIndexRef = useRef(0);
   const gpsTraceRef = useRef<GpsPoint[]>([]);
-  const cameraRef = useRef<CameraView | null>(null);
+  const passiveCameraRef = useRef<CameraView | null>(null);
+  const driveCameraRef = useRef<CameraPreviewHandle | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const recordingRef = useRef(false);
   const activeChunkRef = useRef(false);
   const lastMagRef = useRef(1);
   const accelSubRef = useRef<{ remove: () => void } | null>(null);
+  const lastChunkIdRef = useRef<string | null>(null);
+  const bumpCooldownRef = useRef(false);
+
+  const selectedSource = useMemo(
+    () => inputs.find((input) => input.id === selectedSourceId) ?? inputs[0],
+    [inputs, selectedSourceId],
+  );
+
+  useEffect(() => {
+    void getExternalStreamUrl().then(setStreamUrlDraft);
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -73,7 +94,7 @@ export default function CameraScreen() {
     setRecording(false);
 
     try {
-      cameraRef.current?.stopRecording();
+      passiveCameraRef.current?.stopRecording();
     } catch {
       // ignore cleanup errors
     }
@@ -88,21 +109,50 @@ export default function CameraScreen() {
   }
 
   function cleanupDriverMonitoring(shouldEndSession: boolean) {
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = null;
     accelSubRef.current?.remove();
     accelSubRef.current = null;
+    recordingRef.current = false;
+    setRecording(false);
+
+    void driveCameraRef.current?.stopRecording().catch(() => undefined);
 
     const currentSessionId = sessionIdRef.current;
     sessionIdRef.current = null;
     setSessionId(null);
-    setRecording(false);
+    lastChunkIdRef.current = null;
 
     if (shouldEndSession && currentSessionId) {
       void api(`/api/passive/sessions/${currentSessionId}/end`, { method: 'POST' }).catch(() => undefined);
     }
   }
 
-  async function captureChunk() {
-    if (!sessionIdRef.current || !cameraRef.current || activeChunkRef.current || !recordingRef.current) return;
+  async function uploadChunk(uri: string, chunkIndex: number) {
+    const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+    const t = chunkIndex * (CHUNK_MS / 1000);
+    gpsTraceRef.current.push({ t, lat: loc.coords.latitude, lng: loc.coords.longitude });
+
+    const extension = uri.endsWith('.webm') ? 'webm' : 'mp4';
+    const mimeType = extension === 'webm' ? 'video/webm' : 'video/mp4';
+
+    const form = new FormData();
+    form.append('chunk_index', String(chunkIndex));
+    form.append('start_time', new Date(Date.now() - CHUNK_MS).toISOString());
+    form.append('end_time', new Date().toISOString());
+    form.append('gps_trace_json', JSON.stringify(gpsTraceRef.current));
+    form.append('video', { uri, name: `chunk_${chunkIndex}.${extension}`, type: mimeType } as unknown as Blob);
+
+    const chunk = await api<{ id: string }>(`/api/passive/sessions/${sessionIdRef.current}/chunks`, {
+      method: 'POST',
+      body: form,
+    });
+    lastChunkIdRef.current = chunk.id;
+    return chunk.id;
+  }
+
+  async function capturePassiveChunk() {
+    if (!sessionIdRef.current || !passiveCameraRef.current || activeChunkRef.current || !recordingRef.current) return;
 
     activeChunkRef.current = true;
     try {
@@ -110,18 +160,11 @@ export default function CameraScreen() {
       const t = chunkIndexRef.current * (CHUNK_MS / 1000);
       gpsTraceRef.current.push({ t, lat: loc.coords.latitude, lng: loc.coords.longitude });
 
-      const recorded = await cameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 });
+      const recorded = await passiveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 });
       const uri = recorded?.uri;
       if (!uri) throw new Error('No video chunk was produced.');
 
-      const form = new FormData();
-      form.append('chunk_index', String(chunkIndexRef.current));
-      form.append('start_time', new Date(Date.now() - CHUNK_MS).toISOString());
-      form.append('end_time', new Date().toISOString());
-      form.append('gps_trace_json', JSON.stringify(gpsTraceRef.current));
-      form.append('video', { uri, name: `chunk_${chunkIndexRef.current}.mp4`, type: 'video/mp4' } as unknown as Blob);
-
-      await api(`/api/passive/sessions/${sessionIdRef.current}/chunks`, { method: 'POST', body: form });
+      await uploadChunk(uri, chunkIndexRef.current);
       chunkIndexRef.current += 1;
       setChunkCount(chunkIndexRef.current);
     } catch (error) {
@@ -135,6 +178,56 @@ export default function CameraScreen() {
     } finally {
       activeChunkRef.current = false;
     }
+  }
+
+  async function captureDriveChunk() {
+    if (!sessionIdRef.current || !driveCameraRef.current || activeChunkRef.current || !recordingRef.current) return;
+    if (selectedSource?.kind === 'external-stream') return;
+
+    activeChunkRef.current = true;
+    try {
+      const recorded = await driveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 });
+      const uri = recorded?.uri;
+      if (!uri) return;
+
+      await uploadChunk(uri, chunkIndexRef.current);
+      chunkIndexRef.current += 1;
+      setChunkCount(chunkIndexRef.current);
+    } catch (error) {
+      const queue = JSON.parse((await AsyncStorage.getItem('chunk_queue')) || '[]');
+      queue.push({
+        sessionId: sessionIdRef.current,
+        index: chunkIndexRef.current,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      await AsyncStorage.setItem('chunk_queue', JSON.stringify(queue));
+    } finally {
+      activeChunkRef.current = false;
+    }
+  }
+
+  async function postBumpEvent(delta: number) {
+    if (!sessionIdRef.current || bumpCooldownRef.current) return;
+
+    bumpCooldownRef.current = true;
+    setTimeout(() => {
+      bumpCooldownRef.current = false;
+    }, 1500);
+
+    const loc = await Location.getCurrentPositionAsync({});
+    await api('/api/driver/sensor-events', {
+      method: 'POST',
+      body: JSON.stringify({
+        route_session_id: sessionIdRef.current,
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        magnitude: delta,
+        event_type: 'bump',
+        event_timestamp: new Date().toISOString(),
+        video_chunk_id: lastChunkIdRef.current,
+      }),
+    });
+    setDriverEvents((count) => count + 1);
   }
 
   async function startPassiveRecording() {
@@ -158,10 +251,10 @@ export default function CameraScreen() {
       setRecording(true);
 
       timerRef.current = setInterval(() => {
-        void captureChunk();
+        void capturePassiveChunk();
       }, CHUNK_MS);
 
-      await captureChunk();
+      await capturePassiveChunk();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to start passive recording.';
       Alert.alert('Recording unavailable', message);
@@ -183,38 +276,37 @@ export default function CameraScreen() {
     setBusy(true);
     try {
       await ensurePermissions();
+      await refreshInputs();
 
       const session = await api<{ id: string }>('/api/passive/sessions', {
         method: 'POST',
-        body: JSON.stringify({ mode: 'driver' }),
+        body: JSON.stringify({ mode: 'driver', device_id: selectedSource?.id }),
       });
 
       sessionIdRef.current = session.id;
       setSessionId(session.id);
+      chunkIndexRef.current = 0;
+      setChunkCount(0);
       setDriverEvents(0);
+      gpsTraceRef.current = [];
+      recordingRef.current = true;
       setRecording(true);
       lastMagRef.current = 1;
 
+      timerRef.current = setInterval(() => {
+        void captureDriveChunk();
+      }, CHUNK_MS);
+
+      await captureDriveChunk();
+
       Accelerometer.setUpdateInterval(200);
-      accelSubRef.current = Accelerometer.addListener(async ({ x, y, z }) => {
+      accelSubRef.current = Accelerometer.addListener(({ x, y, z }) => {
         const mag = Math.sqrt(x * x + y * y + z * z);
         const delta = Math.abs(mag - lastMagRef.current);
         lastMagRef.current = mag;
 
         if (delta > 2.5 && sessionIdRef.current) {
-          const loc = await Location.getCurrentPositionAsync({});
-          await api('/api/driver/sensor-events', {
-            method: 'POST',
-            body: JSON.stringify({
-              route_session_id: sessionIdRef.current,
-              latitude: loc.coords.latitude,
-              longitude: loc.coords.longitude,
-              magnitude: delta,
-              event_type: 'bump',
-              event_timestamp: new Date().toISOString(),
-            }),
-          });
-          setDriverEvents((count) => count + 1);
+          void postBumpEvent(delta);
         }
       });
     } catch (error) {
@@ -229,6 +321,8 @@ export default function CameraScreen() {
   function stopDriverMode() {
     cleanupDriverMonitoring(true);
     setDriverEvents(0);
+    chunkIndexRef.current = 0;
+    setChunkCount(0);
   }
 
   function handleModeChange(next: Mode) {
@@ -238,6 +332,18 @@ export default function CameraScreen() {
       else stopDriverMode();
     }
     setMode(next);
+  }
+
+  function handleSelectSource(input: VideoInput) {
+    if (recording || busy) return;
+    setSelectedSourceId(input.id);
+  }
+
+  async function handleSaveStreamUrl() {
+    await saveExternalStreamUrl(streamUrlDraft);
+    await refreshInputs();
+    setSelectedSourceId('external-stream');
+    Alert.alert('Stream saved', 'External camera stream URL saved for Drive mode.');
   }
 
   async function handleActionPress() {
@@ -255,15 +361,21 @@ export default function CameraScreen() {
     if (mode === 'passive') {
       if (recording) stopPassiveRecording();
       else await startPassiveRecording();
-    } else if (recording) {
-      stopDriverMode();
-    } else {
-      await startDriverMode();
+      return;
     }
+
+    if (recording) stopDriverMode();
+    else await startDriverMode();
   }
 
   const permissionsReady =
     cameraPermission?.granted && microphonePermission?.granted && locationPermission?.granted;
+
+  const drivePreviewSource = selectedSource ?? {
+    id: 'phone-back',
+    label: 'Phone rear camera',
+    kind: 'phone-back' as const,
+  };
 
   return (
     <View style={styles.container}>
@@ -282,11 +394,34 @@ export default function CameraScreen() {
             <Text style={[styles.modeText, mode === 'drive' && styles.modeTextActive]}>Drive</Text>
           </Pressable>
         </View>
+
+        {mode === 'drive' ? (
+          <CameraSourcePicker
+            inputs={inputs}
+            selectedId={selectedSourceId}
+            loading={inputsLoading}
+            onSelect={handleSelectSource}
+            streamUrl={streamUrlDraft}
+            onStreamUrlChange={setStreamUrlDraft}
+            onSaveStreamUrl={() => { void handleSaveStreamUrl(); }}
+          />
+        ) : null}
       </View>
 
       <View style={styles.cameraSection}>
         {permissionsReady ? (
-          <CameraView style={styles.camera} ref={cameraRef} mode="video" facing="back" />
+          mode === 'passive' ? (
+            <CameraView style={styles.camera} ref={passiveCameraRef} mode="video" facing="back" />
+          ) : (
+            <CameraPreview
+              ref={driveCameraRef}
+              source={{
+                ...drivePreviewSource,
+                streamUrl: drivePreviewSource.kind === 'external-stream' ? streamUrlDraft : drivePreviewSource.streamUrl,
+              }}
+              active
+            />
+          )
         ) : (
           <View style={styles.permissionPlaceholder}>
             <Text style={styles.permissionText}>
@@ -305,9 +440,17 @@ export default function CameraScreen() {
         {recording && mode === 'drive' && (
           <View style={styles.recordingBadge}>
             <View style={styles.recordingDot} />
-            <Text style={styles.recordingLabel}>Monitoring · {driverEvents} events</Text>
+            <Text style={styles.recordingLabel}>
+              Drive · {driverEvents} bumps · {chunkCount} chunks
+            </Text>
           </View>
         )}
+
+        {mode === 'drive' && drivePreviewSource.kind === 'external-stream' && !streamUrlDraft ? (
+          <View style={styles.helperBadge}>
+            <Text style={styles.helperText}>Add an external stream URL to preview your webcam feed.</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.bottomBar}>
@@ -338,6 +481,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 12,
     backgroundColor: '#f5f5f7',
+    gap: 12,
   },
   modeToggle: {
     flexDirection: 'row',
@@ -395,6 +539,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
+  },
+  helperBadge: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  helperText: {
+    color: '#ffffff',
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
   },
   recordingDot: {
     width: 8,
