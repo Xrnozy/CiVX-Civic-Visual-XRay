@@ -147,9 +147,15 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'RegisterPage.tsx:handleGoogle',message:'google register start',data:{accountType,hasPending:!!sessionStorage.getItem('civx_pending_registration')},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
       const cred = await signInWithGoogle();
       await persistAuthSession(cred);
       const pending = JSON.parse(sessionStorage.getItem('civx_pending_registration') || '{}');
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'RegisterPage.tsx:handleGoogle',message:'calling completeRegistration',data:{account_type:pending.account_type,hasInvite:!!pending.invite_token},timestamp:Date.now(),hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion
       const profile = await completeRegistration(pending);
       sessionStorage.removeItem('civx_pending_registration');
       navigate(redirectPathForRole(profile.role));

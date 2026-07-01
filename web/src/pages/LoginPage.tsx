@@ -79,6 +79,9 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'LoginPage.tsx:handleGoogle',message:'google sign-in start',data:{},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+      // #endregion
       const cred = await signInWithGoogle();
       const profile = await persistAuthSession(cred);
       if (!isRegistrationComplete(profile)) {

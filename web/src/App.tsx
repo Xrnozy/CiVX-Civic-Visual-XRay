@@ -25,6 +25,7 @@ import OrganizerCleanupPage from './pages/organizer/OrganizerCleanupPage';
 import { WorkerLayout } from './pages/worker/WorkerLayout';
 import WorkerDashboard from './pages/worker/WorkerDashboard';
 import WorkerShiftsPage from './pages/worker/WorkerShiftsPage';
+import AnalyzerTestPage from './pages/AnalyzerTestPage';
 
 export default function App() {
   return (
@@ -34,6 +35,8 @@ export default function App() {
         <Route path="/map" element={<MapPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/report" element={<ReportPage />} />
+        <Route path="/analyzer" element={<AnalyzerTestPage />} />
+        <Route path="/analyzer/test" element={<AnalyzerTestPage />} />
         <Route path="/gallery" element={<GalleryPage />} />
         <Route path="/transparency" element={<TransparencyPage />} />
         <Route path="/login" element={<LoginPage />} />

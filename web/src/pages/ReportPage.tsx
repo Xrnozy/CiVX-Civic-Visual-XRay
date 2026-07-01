@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { Footer } from '../components/ui/Footer';
 import { ButtonPrimary } from '../components/ui/Buttons';
-import { CivicMap } from '../components/map/CivicMap';
+import { FORM_FIELD_INPUT, LocationPickerSection, hasValidLocation } from '../components/map/LocationPickerSection';
 import { api } from '../lib/api';
 import { ISSUE_CATEGORIES } from '../shared/constants';
 import { useAuth } from '../hooks/useAuth';
@@ -30,10 +30,8 @@ export default function ReportPage() {
   const [result, setResult] = useState<ReportResult | null>(null);
 
   const selectedLocation = useMemo(() => {
-    const lat = Number(latitude);
-    const lng = Number(longitude);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    return { latitude: lat, longitude: lng };
+    if (!hasValidLocation(latitude, longitude)) return null;
+    return { latitude: Number(latitude), longitude: Number(longitude) };
   }, [latitude, longitude]);
 
   const canSubmit = useMemo(() => {
@@ -50,11 +48,6 @@ export default function ReportPage() {
       photos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
     };
   }, [photos]);
-
-  function pinLocation(lat: number, lng: number) {
-    setLatitude(lat.toFixed(6));
-    setLongitude(lng.toFixed(6));
-  }
 
   function handlePhotoChange(files: FileList | null) {
     if (!files || !files.length) return;
@@ -78,21 +71,6 @@ export default function ReportPage() {
       if (removed) URL.revokeObjectURL(removed.previewUrl);
       return current.filter((photo) => photo.id !== id);
     });
-  }
-
-  async function captureGeo() {
-    if (!navigator.geolocation) {
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        pinLocation(pos.coords.latitude, pos.coords.longitude);
-      },
-      () => {
-        // leave fields manual if browser blocks geolocation
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
   }
 
   async function submit() {
@@ -155,7 +133,7 @@ export default function ReportPage() {
                     multiple
                     capture="environment"
                     onChange={(e) => handlePhotoChange(e.target.files)}
-                    className="w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition file:mr-4 file:rounded-full file:border-0 file:bg-canvas-parchment file:px-4 file:py-2 file:text-sm file:font-medium file:text-ink focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className={`${FORM_FIELD_INPUT} file:mr-4 file:rounded-full file:border-0 file:bg-canvas-parchment file:px-4 file:py-2 file:text-sm file:font-medium file:text-ink`}
                   />
                 </label>
 
@@ -184,51 +162,14 @@ export default function ReportPage() {
                 )}
               </section>
 
-              <section className="rounded-[24px] border border-hairline bg-canvas p-5 md:p-6">
-                <div>
-                  <h2 className="text-lg font-semibold text-ink">Location</h2>
-                  <p className="mt-1 text-sm text-ink-muted-48">Click the map to pin a point, or use your current location.</p>
-                </div>
-
-                <div className="mt-4 overflow-hidden rounded-[20px] border border-hairline bg-canvas-parchment">
-                  <CivicMap
-                    markers={[]}
-                    selectedLocation={selectedLocation}
-                    onLocationPick={(lat, lng) => pinLocation(lat, lng)}
-                  />
-                </div>
-
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-medium text-ink">Latitude</span>
-                    <input
-                      className="w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      value={latitude}
-                      onChange={(e) => setLatitude(e.target.value)}
-                      placeholder="14.579359"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="mb-2 block text-sm font-medium text-ink">Longitude</span>
-                    <input
-                      className="w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                      value={longitude}
-                      onChange={(e) => setLongitude(e.target.value)}
-                      placeholder="121.040089"
-                    />
-                  </label>
-                </div>
-
-                <div className="mt-4">
-                  <ButtonPrimary type="button" onClick={captureGeo}>Use my location</ButtonPrimary>
-                </div>
-
-                <div className="mt-3 text-sm text-ink-muted-48">
-                  {selectedLocation
-                    ? `Pinned location: ${selectedLocation.latitude.toFixed(6)}, ${selectedLocation.longitude.toFixed(6)}`
-                    : 'No pin set yet.'}
-                </div>
-              </section>
+              <LocationPickerSection
+                latitude={latitude}
+                longitude={longitude}
+                onChange={(lat, lng) => {
+                  setLatitude(lat);
+                  setLongitude(lng);
+                }}
+              />
             </div>
 
             <div className="space-y-6">
@@ -238,11 +179,7 @@ export default function ReportPage() {
 
                 <label className="mt-5 block">
                   <span className="mb-2 block text-sm font-medium text-ink">Issue type</span>
-                  <select
-                    className="w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    value={issueType}
-                    onChange={(e) => setIssueType(e.target.value)}
-                  >
+                  <select className={FORM_FIELD_INPUT} value={issueType} onChange={(e) => setIssueType(e.target.value)}>
                     {ISSUE_CATEGORIES.map((category) => (
                       <option key={category} value={category}>{category.replace(/_/g, ' ')}</option>
                     ))}
@@ -252,7 +189,7 @@ export default function ReportPage() {
                 <label className="mt-4 block">
                   <span className="mb-2 block text-sm font-medium text-ink">Description</span>
                   <textarea
-                    className="min-h-36 w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink-muted-48 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className={`min-h-36 ${FORM_FIELD_INPUT}`}
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Add a short description"
@@ -262,7 +199,7 @@ export default function ReportPage() {
                 <label className="mt-4 block">
                   <span className="mb-2 block text-sm font-medium text-ink">Barangay</span>
                   <input
-                    className="w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink-muted-48 focus:border-primary focus:ring-2 focus:ring-primary/20"
+                    className={FORM_FIELD_INPUT}
                     value={barangay}
                     onChange={(e) => setBarangay(e.target.value)}
                     placeholder="Optional"

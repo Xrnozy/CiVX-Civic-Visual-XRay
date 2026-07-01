@@ -76,8 +76,22 @@ export function startAuthTokenSync(): () => void {
 }
 
 export async function persistAuthSession(cred: UserCredential): Promise<UserProfile> {
+  // #region agent log
+  fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'auth.ts:persistAuthSession:entry',message:'persistAuthSession start',data:{uid:cred.user.uid,email:cred.user.email?.replace(/(.{2}).*(@.*)/,'$1***$2')},timestamp:Date.now(),hypothesisId:'H3'})}).catch(()=>{});
+  // #endregion
   await syncAuthTokenFromFirebase(cred.user);
-  return fetchProfileAfterAuth();
+  try {
+    const profile = await fetchProfileAfterAuth();
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'auth.ts:persistAuthSession:ok',message:'/api/users/me ok',data:{userId:profile.id,role:profile.role,registration_completed:profile.registration_completed},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion
+    return profile;
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'auth.ts:persistAuthSession:fail',message:'/api/users/me failed',data:{error:err instanceof Error?err.message.slice(0,300):String(err)},timestamp:Date.now(),hypothesisId:'H1-H2'})}).catch(()=>{});
+    // #endregion
+    throw err;
+  }
 }
 
 let redirectResultHandled = false;

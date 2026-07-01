@@ -1,7 +1,12 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { ButtonPrimary } from '../../components/ui/Buttons';
-import { DEFAULT_MAP_CENTER } from '../../shared/constants';
+import {
+  FORM_FIELD_INPUT,
+  LocationPickerSection,
+  hasValidLocation,
+} from '../../components/map/LocationPickerSection';
+import { useOrganizerCleanup } from './OrganizerLayout';
 
 interface CleanupEvent {
   id: string;
@@ -11,22 +16,33 @@ interface CleanupEvent {
   scheduled_end: string;
   approval_status: string;
   max_volunteers: number;
+  latitude?: number;
+  longitude?: number;
+}
+
+const EMPTY_FORM = {
+  title: '',
+  description: '',
+  barangay: '',
+  scheduled_start: '',
+  scheduled_end: '',
+  max_volunteers: 50,
+  latitude: '',
+  longitude: '',
+};
+
+function statusClass(status: string) {
+  if (status === 'approved') return 'bg-emerald-100 text-emerald-800';
+  if (status === 'rejected') return 'bg-red-100 text-red-700';
+  return 'bg-amber-100 text-amber-800';
 }
 
 export default function OrganizerCleanupPage() {
+  const { showForm, setShowForm } = useOrganizerCleanup();
   const [events, setEvents] = useState<CleanupEvent[]>([]);
-  const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({
-    title: '',
-    description: '',
-    barangay: '',
-    scheduled_start: '',
-    scheduled_end: '',
-    max_volunteers: 50,
-    latitude: DEFAULT_MAP_CENTER.lat,
-    longitude: DEFAULT_MAP_CENTER.lng,
-  });
+  const [formError, setFormError] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const load = useCallback(() => {
     api<CleanupEvent[]>('/api/cleanup-events?mine=true').then(setEvents).catch(() => setEvents([]));
@@ -38,23 +54,23 @@ export default function OrganizerCleanupPage() {
 
   async function createEvent(e: FormEvent) {
     e.preventDefault();
+    if (!hasValidLocation(form.latitude, form.longitude)) {
+      setFormError('Pin the cleanup location on the map before submitting.');
+      return;
+    }
+    setFormError('');
     setCreating(true);
     try {
       await api('/api/cleanup-events', {
         method: 'POST',
-        body: JSON.stringify(form),
+        body: JSON.stringify({
+          ...form,
+          latitude: Number(form.latitude),
+          longitude: Number(form.longitude),
+        }),
       });
       setShowForm(false);
-      setForm({
-        title: '',
-        description: '',
-        barangay: '',
-        scheduled_start: '',
-        scheduled_end: '',
-        max_volunteers: 50,
-        latitude: DEFAULT_MAP_CENTER.lat,
-        longitude: DEFAULT_MAP_CENTER.lng,
-      });
+      setForm(EMPTY_FORM);
       load();
     } finally {
       setCreating(false);
@@ -62,58 +78,147 @@ export default function OrganizerCleanupPage() {
   }
 
   return (
-    <div className="mx-auto max-w-[1440px] p-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-[28px] font-semibold text-ink">Cleanup drives</h2>
-          <p className="mt-1 text-sm text-ink-muted-48">Drives require LGU approval before volunteers can join.</p>
-        </div>
-        <ButtonPrimary onClick={() => setShowForm((v) => !v)}>{showForm ? 'Cancel' : 'New cleanup drive'}</ButtonPrimary>
-      </div>
+    <div className="min-h-screen bg-canvas-parchment">
+      <div className="page-content">
+        <p className="eyebrow mb-0">Organizer</p>
+        <h1 className="mt-2 text-[34px] font-semibold tracking-tight text-ink md:text-[40px]">
+          Cleanup drives
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm text-ink-muted-80">
+          Plan community cleanups, pin the meeting point on the map, and submit for LGU approval before
+          volunteers can join.
+        </p>
 
-      {showForm && (
-        <form onSubmit={createEvent} className="store-utility-card mt-6 grid gap-4 md:grid-cols-2">
-          <input className="auth-input md:col-span-2" placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />
-          <textarea
-            className="auth-input md:col-span-2"
-            placeholder="Description"
-            rows={3}
-            value={form.description}
-            onChange={(e) => setForm({ ...form, description: e.target.value })}
-          />
-          <input className="auth-input" placeholder="Barangay" value={form.barangay} onChange={(e) => setForm({ ...form, barangay: e.target.value })} />
-          <input className="auth-input" type="number" min={1} placeholder="Max volunteers" value={form.max_volunteers} onChange={(e) => setForm({ ...form, max_volunteers: Number(e.target.value) })} />
-          <input className="auth-input" type="datetime-local" value={form.scheduled_start} onChange={(e) => setForm({ ...form, scheduled_start: e.target.value })} required />
-          <input className="auth-input" type="datetime-local" value={form.scheduled_end} onChange={(e) => setForm({ ...form, scheduled_end: e.target.value })} required />
-          <ButtonPrimary type="submit" className="md:col-span-2 justify-center" disabled={creating}>
-            {creating ? 'Submitting…' : 'Submit for LGU approval'}
-          </ButtonPrimary>
-        </form>
-      )}
+        {showForm && (
+          <form
+            id="create-drive"
+            onSubmit={createEvent}
+            className="store-utility-card mt-8 grid gap-8 bg-canvas p-6 lg:grid-cols-2 lg:p-8"
+          >
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-lg font-semibold text-ink">Drive details</h2>
+                <p className="mt-1 text-sm text-ink-muted-48">Describe the cleanup and when volunteers should arrive.</p>
+              </div>
 
-      <div className="mt-10 space-y-4">
-        {events.map((ev) => (
-          <div key={ev.id} className="store-utility-card flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="font-semibold text-ink">{ev.title}</p>
-              <p className="text-sm text-ink-muted-48">
-                {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
-              </p>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-ink">Title</span>
+                <input
+                  className={FORM_FIELD_INPUT}
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  placeholder="e.g. Brgy 5 canal cleanup"
+                  required
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-ink">Description</span>
+                <textarea
+                  className={`min-h-28 ${FORM_FIELD_INPUT}`}
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  placeholder="What volunteers should bring, meet-up notes, etc."
+                />
+              </label>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-ink">Barangay</span>
+                  <input
+                    className={FORM_FIELD_INPUT}
+                    value={form.barangay}
+                    onChange={(e) => setForm({ ...form, barangay: e.target.value })}
+                    placeholder="Barangay name"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-ink">Max volunteers</span>
+                  <input
+                    className={FORM_FIELD_INPUT}
+                    type="number"
+                    min={1}
+                    value={form.max_volunteers}
+                    onChange={(e) => setForm({ ...form, max_volunteers: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-ink">Start</span>
+                  <input
+                    className={FORM_FIELD_INPUT}
+                    type="datetime-local"
+                    value={form.scheduled_start}
+                    onChange={(e) => setForm({ ...form, scheduled_start: e.target.value })}
+                    required
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-2 block text-sm font-medium text-ink">End</span>
+                  <input
+                    className={FORM_FIELD_INPUT}
+                    type="datetime-local"
+                    value={form.scheduled_end}
+                    onChange={(e) => setForm({ ...form, scheduled_end: e.target.value })}
+                    required
+                  />
+                </label>
+              </div>
             </div>
-            <span
-              className={`rounded-full px-3 py-1 text-xs font-medium capitalize ${
-                ev.approval_status === 'approved'
-                  ? 'bg-green-50 text-green-700'
-                  : ev.approval_status === 'rejected'
-                    ? 'bg-red-50 text-red-700'
-                    : 'bg-amber-50 text-amber-700'
-              }`}
-            >
-              {ev.approval_status}
-            </span>
+
+            <div className="rounded-[20px] border border-hairline bg-canvas-parchment p-5">
+              <LocationPickerSection
+                embedded
+                latitude={form.latitude}
+                longitude={form.longitude}
+                onChange={(lat, lng) => setForm({ ...form, latitude: lat, longitude: lng })}
+                label="Cleanup location"
+                hint="Pin where volunteers should meet and where the drive is focused."
+              />
+            </div>
+
+            {formError && <p className="text-sm text-red-600 lg:col-span-2">{formError}</p>}
+
+            <ButtonPrimary type="submit" className="justify-center lg:col-span-2" disabled={creating}>
+              {creating ? 'Submitting…' : 'Submit for LGU approval'}
+            </ButtonPrimary>
+          </form>
+        )}
+
+        <div className="mt-10">
+          <h2 className="text-lg font-semibold text-ink">My drives</h2>
+          <p className="mt-1 text-sm text-ink-muted-48">
+            {events.length} drive{events.length === 1 ? '' : 's'} · approved drives appear on the public map
+          </p>
+
+          <div className="mt-4 space-y-3">
+            {events.map((ev) => (
+              <div key={ev.id} className="store-utility-card flex flex-wrap items-center justify-between gap-4 bg-canvas">
+                <div>
+                  <p className="font-semibold text-ink">{ev.title}</p>
+                  <p className="mt-1 text-sm text-ink-muted-48">
+                    {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
+                  </p>
+                  {ev.latitude != null && ev.longitude != null && (
+                    <p className="mt-1 text-xs text-ink-muted-48">
+                      Location: {Number(ev.latitude).toFixed(5)}, {Number(ev.longitude).toFixed(5)}
+                    </p>
+                  )}
+                </div>
+                <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(ev.approval_status)}`}>
+                  {ev.approval_status.replace('_', ' ')}
+                </span>
+              </div>
+            ))}
+            {events.length === 0 && (
+              <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
+                No cleanup drives yet. Use <strong className="text-ink">New cleanup drive</strong> above to plan your first one.
+              </div>
+            )}
           </div>
-        ))}
-        {events.length === 0 && <p className="text-sm text-ink-muted-48">No cleanup drives yet.</p>}
+        </div>
       </div>
     </div>
   );

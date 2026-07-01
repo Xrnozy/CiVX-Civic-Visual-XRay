@@ -15,3 +15,7 @@ opencv-python-headless>=4.10.0
 ffmpeg-python>=0.2.0
 imagehash>=4.3.1
 numpy>=1.26.0
+transformers==4.57.1
+accelerate>=1.2.0
+peft>=0.14.0
+# Install PyTorch separately for your CUDA/CPU setup: https://pytorch.org/get-started

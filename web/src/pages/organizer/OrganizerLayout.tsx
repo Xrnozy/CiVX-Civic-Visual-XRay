@@ -1,12 +1,36 @@
-import { Link, Navigate, Outlet } from 'react-router-dom';
+import { createContext, useContext, useState } from 'react';
+import { Navigate, Outlet } from 'react-router-dom';
 import { GlobalNav } from '../../components/ui/GlobalNav';
+import { SubNavFrosted } from '../../components/ui/SubNavFrosted';
+import { ButtonPrimary } from '../../components/ui/Buttons';
 import { useProfile } from '../../hooks/useProfile';
+
+interface OrganizerCleanupContextValue {
+  showForm: boolean;
+  setShowForm: (open: boolean) => void;
+  toggleForm: () => void;
+}
+
+const OrganizerCleanupContext = createContext<OrganizerCleanupContextValue | null>(null);
+
+export function useOrganizerCleanup() {
+  const ctx = useContext(OrganizerCleanupContext);
+  if (!ctx) {
+    throw new Error('useOrganizerCleanup must be used within OrganizerLayout');
+  }
+  return ctx;
+}
 
 export function OrganizerLayout() {
   const { profile, ready } = useProfile();
+  const [showForm, setShowForm] = useState(false);
 
   if (!ready) {
-    return <div className="flex min-h-screen items-center justify-center text-sm text-ink-muted-48">Loading…</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-canvas text-sm text-ink-muted-48">
+        Loading…
+      </div>
+    );
   }
 
   if (!profile || profile.role !== 'organizer') {
@@ -14,20 +38,24 @@ export function OrganizerLayout() {
   }
 
   return (
-    <>
+    <OrganizerCleanupContext.Provider
+      value={{
+        showForm,
+        setShowForm,
+        toggleForm: () => setShowForm((v) => !v),
+      }}
+    >
       <GlobalNav />
-      <div className="border-b border-hairline bg-canvas">
-        <div className="mx-auto flex max-w-[1440px] items-center justify-between px-6 py-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-widest text-primary">Community leader</p>
-            <h1 className="text-xl font-semibold text-ink">{profile.organization_name || profile.full_name}</h1>
-          </div>
-          <Link to="/organizer" className="text-sm text-primary">
-            My cleanup drives
-          </Link>
-        </div>
-      </div>
+      <SubNavFrosted
+        title={profile.organization_name || profile.full_name}
+        lead="Community leader · Cleanup drives"
+        action={
+          <ButtonPrimary type="button" onClick={() => setShowForm((v) => !v)}>
+            {showForm ? 'Cancel' : 'New cleanup drive'}
+          </ButtonPrimary>
+        }
+      />
       <Outlet />
-    </>
+    </OrganizerCleanupContext.Provider>
   );
 }

@@ -19,6 +19,7 @@ interface Props {
   zoom?: number;
   selectedLocation?: { latitude: number; longitude: number } | null;
   onLocationPick?: (latitude: number, longitude: number) => void;
+  heightClass?: string;
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -51,6 +52,7 @@ export function CivicMap({
   zoom = 13,
   selectedLocation,
   onLocationPick,
+  heightClass = 'h-[70vh]',
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
@@ -249,7 +251,7 @@ export function CivicMap({
     const credentialsUrl = `https://console.cloud.google.com/apis/credentials?project=${MAPS_PROJECT_ID}`;
 
     return (
-      <div className="flex h-[70vh] w-full flex-col items-center justify-center rounded-[24px] border border-hairline bg-canvas-parchment p-8">
+      <div className={`flex w-full flex-col items-center justify-center rounded-[24px] border border-hairline bg-canvas-parchment p-8 ${heightClass}`}>
         <p className="text-lg font-semibold text-ink">Google Maps setup required</p>
         <p className="mt-2 max-w-xl text-center text-sm text-ink-muted-80">
           {mapError === 'not_activated' && (
@@ -306,7 +308,7 @@ export function CivicMap({
   }
 
   return (
-    <div className="relative h-[70vh] w-full">
+    <div className={`relative w-full ${heightClass}`}>
       {loading && (
         <div className="absolute inset-0 z-10 flex items-center justify-center rounded-[24px] bg-canvas-parchment text-sm text-ink-muted-48">
           Loading Google Maps…

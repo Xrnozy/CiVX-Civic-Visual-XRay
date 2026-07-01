@@ -33,7 +33,21 @@ USER_LIST_FIELDS = "id, full_name, email, role, barangay, registration_completed
 @router.get("/me")
 def get_me(user: AuthUser = Depends(get_current_user)):
     sb = get_supabase()
-    row = sb.table("users").select("*").eq("id", user.id).single().execute().data
+    try:
+        row = sb.table("users").select("*").eq("id", user.id).single().execute().data
+    except Exception as exc:
+        # #region agent log
+        try:
+            import json
+            import time
+            from pathlib import Path
+            payload = {"sessionId": "76c51b", "location": "users.py:get_me", "message": "select failed", "data": {"userId": user.id, "error": str(exc)[:300]}, "timestamp": int(time.time() * 1000), "hypothesisId": "H4"}
+            with (Path(__file__).resolve().parents[3] / "debug-76c51b.log").open("a", encoding="utf-8") as f:
+                f.write(json.dumps(payload) + "\n")
+        except Exception:
+            pass
+        # #endregion
+        raise
     return {
         **row,
         "registration_completed": bool(row.get("registration_completed_at")),

@@ -3,7 +3,7 @@ import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
 // In dev, use Vite proxy (/api → localhost:8000). In production, use VITE_API_URL.
 const API_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
 
-async function resolveAuthToken(): Promise<string | null> {
+export async function resolveAuthToken(): Promise<string | null> {
   if (isFirebaseConfigured) {
     const auth = getFirebaseAuth();
     await auth.authStateReady();
@@ -28,7 +28,11 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (!res.ok) {
-    throw new Error(await res.text());
+    const errBody = await res.text();
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'76c51b'},body:JSON.stringify({sessionId:'76c51b',location:'api.ts:api',message:'api error',data:{path,status:res.status,hadToken:!!token,errPreview:errBody.slice(0,300)},timestamp:Date.now(),hypothesisId:'H1-H2'})}).catch(()=>{});
+    // #endregion
+    throw new Error(errBody);
   }
   return res.json();
 }

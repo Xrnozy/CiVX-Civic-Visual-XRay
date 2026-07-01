@@ -5,6 +5,7 @@ import { useProfile } from '../../hooks/useProfile';
 const publicLinks = [
   { to: '/map', label: 'Map' },
   { to: '/events', label: 'Events' },
+  { to: '/analyzer', label: 'Analyzer' },
   { to: '/gallery', label: 'Gallery' },
   { to: '/transparency', label: 'Transparency' },
 ];
