@@ -1,11 +1,13 @@
-import uuid
+import json
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.auth.firebase import AuthUser, get_current_user, require_roles
 from app.db import get_supabase
 from app.models.schemas import RouteSessionCreate
-from app.services.chunk_queue import get_chunk_queue
+from app.services.clip_enqueue import enqueue_clip
+from app.services.queue_mode import queue_status_payload
+from app.services.redis_queue import stream_lengths
 
 router = APIRouter(prefix="/api/passive", tags=["passive"])
 
@@ -221,8 +223,8 @@ def end_session(session_id: str, user: AuthUser = Depends(get_current_user)):
 
 @router.get("/queue/status")
 def queue_status(user: AuthUser = Depends(require_roles(*WORKER_READ))):
-    """Worker queue depth — safe to poll while uploading many 10s chunks."""
-    return get_chunk_queue().status()
+    """Redis pipeline queue depth."""
+    return queue_status_payload(stream_lengths())
 
 
 @router.post("/sessions/{session_id}/chunks")
@@ -240,22 +242,40 @@ async def upload_chunk(
     sb = get_supabase()
     _session_owned(sb, session_id, user.id)
     content = await video.read()
-    key = f"{session_id}/{uuid.uuid4().hex}.mp4"
-    sb.storage.from_("video-chunks").upload(key, content, {"content-type": "video/mp4"})
-    url = sb.storage.from_("video-chunks").get_public_url(key)
     trace = json.loads(gps_trace_json) if gps_trace_json else []
+    lat = trace[-1]["lat"] if trace else None
+    lng = trace[-1]["lng"] if trace else None
+
     chunk = sb.table("video_chunks").insert({
         "route_session_id": session_id,
-        "storage_url": url,
+        "storage_url": "",
         "chunk_index": chunk_index,
         "start_time": start_time,
         "end_time": end_time,
         "gps_trace_json": trace,
         "processing_status": "pending",
     }).execute().data[0]
+
     sb.table("passive_route_sessions").update({
         "total_chunks": chunk_index + 1,
     }).eq("id", session_id).execute()
-    get_chunk_queue().enqueue(chunk["id"])
-    return chunk
+
+    result = enqueue_clip(
+        content,
+        lat=lat,
+        lng=lng,
+        device_id=None,
+        user_id=user.id,
+        capture_mode="passive_camera",
+        route_session_id=session_id,
+        video_chunk_id=chunk["id"],
+        gps_trace_json=trace,
+        skip_session_check=True,
+    )
+
+    sb.table("video_chunks").update({
+        "processing_status": "processing",
+    }).eq("id", chunk["id"]).execute()
+
+    return {**chunk, "job_id": result["job_id"], "pipeline": result}
 

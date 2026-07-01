@@ -182,12 +182,42 @@ Set `EXPO_PUBLIC_API_URL` to your machine IP for device testing.
 python test.py path/to/image.jpg
 ```
 
+Run `supabase/migrations/004_passive_pipeline.sql` for the Redis-based passive incident pipeline (jobs, sessions, evidence tables).
+
+### 2c. Passive incident pipeline (Redis + workers)
+
+The passive upload path uses **Redis Streams** and separate worker processes (YOLO primary, LocateAnything verification for medium-confidence hits). Clips are stored locally under `storage/` by default.
+
+**Requirements:** Redis 6+ (`redis-server` on `127.0.0.1:6379` or set `REDIS_URL` in `infra/.env`).
+
+From the `backend/` directory, start workers in separate terminals (after Redis and the API):
+
+```bash
+redis-server
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+python -m workers.prefilter_worker
+python -m workers.yolo_worker
+python -m workers.locate_worker
+python -m workers.incident_worker
+python -m workers.review_worker
+```
+
+**API endpoints:**
+
+- `POST /api/passive/session/start` — nonce session for trusted uploads
+- `POST /api/passive/upload` — clip upload (returns `job_id` immediately)
+- `GET /api/passive/job/{job_id}` — job status
+- `GET /api/system/queue-status` — Redis stream depths + `normal` / `busy` / `overloaded` mode
+- `POST /api/passive/sessions/{id}/chunks` — mobile adapter (unchanged client; enqueues `clip_jobs`)
+
 ## API Highlights
 
 - `POST /api/reports` – Citizen photo report with AI + duplicate merge
 - `GET /api/incidents/public` – Sanitized public map data
 - `GET /api/maps/markers` – Map markers + cleanup events
-- `POST /api/passive/sessions/{id}/chunks` – 10s video chunk upload
+- `POST /api/passive/upload` – Spec clip upload (Redis pipeline)
+- `GET /api/system/queue-status` – Passive pipeline queue depth
+- `POST /api/passive/sessions/{id}/chunks` – 10s video chunk upload (mobile adapter → Redis)
 - `POST /api/driver/sensor-events` – Driver mode bump detection
 - `WS /ws/dashboard` – Live LGU queue updates
 

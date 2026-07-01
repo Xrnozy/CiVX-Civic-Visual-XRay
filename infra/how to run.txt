@@ -1,0 +1,9 @@
+docker run -d --name civx-redis -p 6379:6379 redis:7-alpine
+
+cd backend
+uvicorn app.main:app --reload --port 8000
+
+cd web
+npm run dev
+
+cloudflared tunnel run civx

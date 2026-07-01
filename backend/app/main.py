@@ -9,20 +9,21 @@ from app.config import settings
 from app.routers import (
     health, users, reports, incidents, cleanup, volunteers,
     attendance, ecoquest, passive, driver, maps, analytics, media, ws,
-    departments, registration_invites, analyzer,
+    departments, registration_invites, analyzer, passive_pipeline,
 )
-from app.services.chunk_queue import get_chunk_queue
+from app.services.redis_queue import ensure_consumer_groups
 
 limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    q = get_chunk_queue()
-    q.start()
-    q.recover_pending()
+    try:
+        ensure_consumer_groups()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Redis consumer groups not initialized: %s", exc)
     yield
-    q.stop()
 
 
 app = FastAPI(
@@ -53,6 +54,7 @@ app.include_router(volunteers.router)
 app.include_router(attendance.router)
 app.include_router(ecoquest.router)
 app.include_router(passive.router)
+app.include_router(passive_pipeline.router)
 app.include_router(driver.router)
 app.include_router(maps.router)
 app.include_router(analytics.router)

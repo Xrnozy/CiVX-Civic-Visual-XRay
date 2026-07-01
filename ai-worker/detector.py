@@ -36,13 +36,7 @@ class YOLODetector:
         model = self._get_model()
         results = model.predict(image_path, conf=self.confidence, verbose=False)
         if not results or not results[0].boxes:
-            return DetectionResult(
-                issue_type="garbage_pile",
-                confidence=0.3,
-                bounding_box={"x1": 0, "y1": 0, "x2": 0, "y2": 0},
-                severity_score=1.5,
-                raw_class="none",
-            )
+            return None
         boxes = results[0].boxes
         best_idx = int(boxes.conf.argmax())
         conf = float(boxes.conf[best_idx])
@@ -57,6 +51,44 @@ class YOLODetector:
             severity_score=compute_severity(issue, conf),
             raw_class=raw_class,
         )
+
+    def detect_batch(self, image_paths: list[str]) -> list[DetectionResult | None]:
+        if not image_paths:
+            return []
+        model = self._get_model()
+        use_half = False
+        try:
+            import torch
+            use_half = torch.cuda.is_available()
+        except Exception:
+            pass
+        results = model.predict(
+            image_paths,
+            conf=self.confidence,
+            verbose=False,
+            batch=len(image_paths),
+            half=use_half,
+        )
+        out: list[DetectionResult | None] = []
+        for res in results:
+            if not res.boxes:
+                out.append(None)
+                continue
+            boxes = res.boxes
+            best_idx = int(boxes.conf.argmax())
+            conf = float(boxes.conf[best_idx])
+            cls_id = int(boxes.cls[best_idx])
+            raw_class = model.names[cls_id]
+            xyxy = boxes.xyxy[best_idx].tolist()
+            issue = map_class_to_issue(raw_class)
+            out.append(DetectionResult(
+                issue_type=issue,
+                confidence=conf,
+                bounding_box={"x1": xyxy[0], "y1": xyxy[1], "x2": xyxy[2], "y2": xyxy[3]},
+                severity_score=compute_severity(issue, conf),
+                raw_class=raw_class,
+            ))
+        return out
 
     def extract_frames(self, video_path: str, fps: float = 1.0) -> list[tuple[str, float]]:
         cap = cv2.VideoCapture(video_path)

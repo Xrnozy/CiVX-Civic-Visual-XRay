@@ -60,6 +60,35 @@ class Settings(BaseSettings):
     public_web_url: str = "http://localhost:5173"
     google_maps_api_key: str = ""
 
+    # Passive pipeline (Redis + YOLO + LocateAnything)
+    redis_url: str = "redis://127.0.0.1:6379/0"
+    pipeline_storage_root: str = "storage"
+    pipeline_session_ttl_minutes: int = 15
+    pipeline_max_job_retries: int = 3
+    queue_yolo_busy: int = 500
+    queue_locate_busy: int = 100
+    queue_yolo_overloaded: int = 2000
+    queue_locate_overloaded: int = 300
+    queue_sample_fps_normal: float = 2.0
+    queue_sample_fps_busy: float = 1.0
+    queue_sample_fps_overloaded: float = 0.5
+    yolo_batch_normal: int = 16
+    yolo_batch_busy: int = 32
+    yolo_confidence_high: float = 0.85
+    yolo_confidence_medium: float = 0.50
+    trust_threshold_trusted: float = 0.75
+    trust_threshold_semi: float = 0.45
+    blur_laplacian_min: float = 80.0
+    frame_hash_max_distance: int = 5
+    pipeline_upload_evidence_to_supabase: bool = True
+
+    @property
+    def pipeline_storage_path(self) -> Path:
+        root = Path(self.pipeline_storage_root)
+        if root.is_absolute():
+            return root
+        return (_REPO_ROOT / root).resolve()
+
     @field_validator(
         "supabase_url",
         "supabase_service_key",
