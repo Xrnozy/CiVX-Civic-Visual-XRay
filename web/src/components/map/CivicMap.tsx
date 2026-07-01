@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
-import { MarkerClusterer } from '@googlemaps/markerclusterer';
+import { MarkerClusterer, MarkerClustererEvents } from '@googlemaps/markerclusterer';
 import { DEFAULT_MAP_CENTER } from '../../shared/constants';
 
 interface MarkerData {
@@ -44,6 +44,57 @@ function keyHint(key: string): string {
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
 
+function clusterDotSize(count: number): number {
+  if (count >= 100) return 68;
+  if (count >= 10) return 60;
+  return 52;
+}
+
+function isValidMarker(mk: MarkerData): boolean {
+  if (mk.latitude == null || mk.longitude == null) return false;
+  if (Number.isNaN(mk.latitude) || Number.isNaN(mk.longitude)) return false;
+  if (mk.type === 'incident') return Boolean(mk.primary_issue_type);
+  return Boolean(mk.title);
+}
+
+function buildClusterDotIcon(count: number): any {
+  const size = clusterDotSize(count);
+  const fontSize = count >= 100 ? 48 : count >= 10 ? 54 : 60;
+  const svg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 240 240">`
+      + '<circle cx="120" cy="120" r="112" fill="#d93025" opacity="0.10"/>'
+      + '<circle cx="120" cy="120" r="92" fill="#d93025" opacity="0.18"/>'
+      + '<circle cx="120" cy="120" r="72" fill="#d93025" opacity="0.30"/>'
+      + '<circle cx="120" cy="120" r="54" fill="#d93025" opacity="0.48"/>'
+      + '<circle cx="120" cy="120" r="44" fill="#d93025" stroke="#ffffff" stroke-width="5"/>'
+      + `<text x="120" y="122" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-family="Roboto,Arial,sans-serif" font-size="${fontSize}" font-weight="500">${count}</text>`
+      + '</svg>'
+  );
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    scaledSize: new (window as any).google.maps.Size(size, size),
+    anchor: new (window as any).google.maps.Point(size / 2, size / 2),
+  };
+}
+
+function buildIncidentDotIcon(): any {
+  const size = 36;
+  const svg = encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 240 240">`
+      + '<circle cx="120" cy="120" r="112" fill="#d93025" opacity="0.10"/>'
+      + '<circle cx="120" cy="120" r="92" fill="#d93025" opacity="0.18"/>'
+      + '<circle cx="120" cy="120" r="72" fill="#d93025" opacity="0.30"/>'
+      + '<circle cx="120" cy="120" r="54" fill="#d93025" opacity="0.48"/>'
+      + '<circle cx="120" cy="120" r="44" fill="#d93025" stroke="#ffffff" stroke-width="5"/>'
+      + '</svg>'
+  );
+  return {
+    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
+    scaledSize: new (window as any).google.maps.Size(size, size),
+    anchor: new (window as any).google.maps.Point(size / 2, size / 2),
+  };
+}
+
 function buildPinIcon(): any {
   const svg = encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="56" viewBox="0 0 42 56">'
@@ -79,6 +130,8 @@ export function CivicMap({
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? '';
   const markerClustererRef = useRef<MarkerClusterer | null>(null);
   const markerByIdRef = useRef<Map<string, any>>(new Map());
+  const pulseRef = useRef<Array<{ halo: any; anchor: any; phase: number; kind: 'incident' | 'cluster' }>>([]);
+  const pulseTimerRef = useRef<number | null>(null);
   const infoWindowRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
   const clickListenerRef = useRef<any>(null);
@@ -210,6 +263,15 @@ export function CivicMap({
       markerClustererRef.current.clearMarkers();
       markerClustererRef.current = null;
     }
+    if (pulseTimerRef.current) {
+      window.clearInterval(pulseTimerRef.current);
+      pulseTimerRef.current = null;
+    }
+    pulseRef.current.forEach(({ halo, anchor }) => {
+      halo.setMap(null);
+      anchor.setMap(null);
+    });
+    pulseRef.current = [];
     markerByIdRef.current.clear();
     infoWindowRef.current?.close();
     if (selectedMarkerRef.current) {
@@ -218,27 +280,109 @@ export function CivicMap({
       selectedMarkerRef.current = null;
     }
 
-    const gmarkers = markers.map((mk) => {
-      const marker = new gmaps.Marker({
+    const validMarkers = markers.filter(isValidMarker);
+
+    const gmarkers = validMarkers.flatMap((mk) => {
+      const haloMarker = new gmaps.Marker({
+        position: { lat: mk.latitude, lng: mk.longitude },
+        zIndex: 1,
+      });
+
+      const pinMarker = new gmaps.Marker({
         position: { lat: mk.latitude, lng: mk.longitude },
         title: mk.primary_issue_type || mk.title,
-        icon:
-          mk.type === 'cleanup'
-            ? undefined
-            : {
-                path: gmaps.SymbolPath.CIRCLE,
-                scale: 8,
-                fillColor: '#0066cc',
-                fillOpacity: 1,
-                strokeWeight: 0,
-              },
+        icon: buildIncidentDotIcon(),
+        zIndex: 2,
       });
-      marker.addListener('click', () => {
+      pinMarker.addListener('click', () => {
         onMarkerSelect?.(mk);
       });
-      markerByIdRef.current.set(mk.id, marker);
-      return marker;
+      markerByIdRef.current.set(mk.id, pinMarker);
+      pulseRef.current.push({
+        halo: haloMarker,
+        anchor: pinMarker,
+        phase: Math.random() * Math.PI * 2,
+        kind: 'incident',
+      });
+      return [pinMarker];
     });
+
+    function startPulseLoop() {
+      if (pulseTimerRef.current) return;
+      pulseTimerRef.current = window.setInterval(() => {
+        pulseRef.current.forEach((entry) => {
+          const anchorMap = entry.anchor.getMap();
+          if (!anchorMap || !entry.anchor.getVisible()) {
+            entry.halo.setMap(null);
+            return;
+          }
+          const position = entry.anchor.getPosition();
+          if (position) {
+            entry.halo.setPosition(position);
+          }
+          entry.halo.setMap(anchorMap);
+          entry.phase += 0.14;
+          const baseScale = entry.kind === 'cluster' ? 34 : 12;
+          const scale = baseScale + (Math.sin(entry.phase) + 1) * 4;
+          const fillOpacity = 0.12 + (Math.sin(entry.phase) + 1) * 0.08;
+          const strokeOpacity = 0.2 + (Math.sin(entry.phase) + 1) * 0.12;
+          entry.halo.setIcon({
+            path: gmaps.SymbolPath.CIRCLE,
+            scale,
+            fillColor: '#d93025',
+            fillOpacity,
+            strokeColor: '#d93025',
+            strokeOpacity,
+            strokeWeight: 1,
+          });
+        });
+      }, 70);
+    }
+
+    function syncClusterPulses() {
+      const clusterer = markerClustererRef.current as { clusters?: Array<{ markers: unknown[]; marker?: unknown }> } | null;
+      if (!clusterer?.clusters) return;
+
+      const activeAnchors = new Set<unknown>();
+      clusterer.clusters.forEach((cluster) => {
+        if (cluster.markers.length > 1 && cluster.marker) {
+          activeAnchors.add(cluster.marker);
+        }
+      });
+
+      pulseRef.current = pulseRef.current.filter((entry) => {
+        if (entry.kind !== 'cluster') return true;
+        if (activeAnchors.has(entry.anchor)) return true;
+        entry.halo.setMap(null);
+        return false;
+      });
+
+      clusterer.clusters.forEach((cluster) => {
+        if (cluster.markers.length <= 1 || !cluster.marker) return;
+        const anchor = cluster.marker as { getPosition: () => unknown; getZIndex?: () => number };
+        const alreadyTracked = pulseRef.current.some(
+          (entry) => entry.kind === 'cluster' && entry.anchor === cluster.marker,
+        );
+        if (alreadyTracked) return;
+
+        const haloMarker = new gmaps.Marker({
+          position: anchor.getPosition(),
+          zIndex: Number(anchor.getZIndex?.() ?? 1000) - 1,
+        });
+        pulseRef.current.push({
+          halo: haloMarker,
+          anchor: cluster.marker,
+          phase: Math.random() * Math.PI * 2,
+          kind: 'cluster',
+        });
+      });
+
+      startPulseLoop();
+    }
+
+    if (pulseRef.current.length) {
+      startPulseLoop();
+    }
 
     if (selectedLocation) {
       const haloMarker = new gmaps.Marker({
@@ -305,13 +449,42 @@ export function CivicMap({
       }
     }
 
+    let clusterEndListener: { remove: () => void } | null = null;
+
     if (gmarkers.length) {
-      markerClustererRef.current = new MarkerClusterer({ markers: gmarkers, map });
+      const clusterer = new MarkerClusterer({
+        markers: gmarkers,
+        map,
+        renderer: {
+          render: ({ count, position }) => new gmaps.Marker({
+            position,
+            icon: buildClusterDotIcon(count),
+            zIndex: 1000 + count,
+          }),
+        },
+      });
+      markerClustererRef.current = clusterer;
+      clusterEndListener = gmaps.event.addListener(
+        clusterer,
+        MarkerClustererEvents.CLUSTERING_END,
+        syncClusterPulses,
+      );
+      syncClusterPulses();
     }
 
     return () => {
+      clusterEndListener?.remove();
       markerClustererRef.current?.clearMarkers();
       markerClustererRef.current = null;
+      if (pulseTimerRef.current) {
+        window.clearInterval(pulseTimerRef.current);
+        pulseTimerRef.current = null;
+      }
+      pulseRef.current.forEach(({ halo, anchor }) => {
+        halo.setMap(null);
+        anchor.setMap(null);
+      });
+      pulseRef.current = [];
       selectedMarkerRef.current?.dispose?.();
       selectedMarkerRef.current?.setMap(null);
       selectedMarkerRef.current = null;

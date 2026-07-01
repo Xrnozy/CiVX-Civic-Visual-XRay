@@ -43,6 +43,7 @@ interface Props {
   loading: boolean;
   onClose: () => void;
   overlay?: boolean;
+  onOpenGallery?: (images: string[], index: number) => void;
 }
 
 function asLocalTime(iso?: string): string {
@@ -94,8 +95,13 @@ function submitterLabel(value?: string): string {
   return 'Community member';
 }
 
-export function CommunityIncidentDrawer({ incident, reports, loading, onClose, overlay = false }: Props) {
+export function CommunityIncidentDrawer({ incident, reports, loading, onClose, overlay = false, onOpenGallery }: Props) {
   const gallery = allImages(reports);
+
+  function openGallery(url: string) {
+    const index = gallery.indexOf(url);
+    if (index >= 0) onOpenGallery?.(gallery, index);
+  }
 
   if (loading && !incident) {
     return (
@@ -194,9 +200,14 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
           ) : (
             <div className="mt-3 grid grid-cols-2 gap-3">
               {gallery.map((url) => (
-                <a key={url} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-[11px] border border-hairline bg-canvas-parchment">
+                <button
+                  key={url}
+                  type="button"
+                  onClick={() => openGallery(url)}
+                  className="overflow-hidden rounded-[11px] border border-hairline bg-canvas-parchment text-left"
+                >
                   <img src={url} alt="Incident evidence" className="h-24 w-full object-cover transition hover:scale-105" />
-                </a>
+                </button>
               ))}
             </div>
           )}
@@ -214,7 +225,13 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
                 <article key={report.id} className="rounded-[11px] border border-hairline p-3">
                   <div className="flex gap-3">
                     {firstImage(report) && (
-                      <img src={firstImage(report)} alt="Report preview" className="h-16 w-16 shrink-0 rounded-[8px] object-cover" />
+                      <button
+                        type="button"
+                        onClick={() => openGallery(firstImage(report)!)}
+                        className="shrink-0 overflow-hidden rounded-[8px]"
+                      >
+                        <img src={firstImage(report)} alt="Report preview" className="h-16 w-16 object-cover transition hover:scale-105" />
+                      </button>
                     )}
                     <div className="min-w-0 flex-1 text-sm">
                       <p className="font-semibold capitalize text-ink">{formatLabel(report.issue_type)}</p>

@@ -21,6 +21,14 @@ def map_markers(issue_type: str | None = None, status: str | None = None, lgu: b
         q = q.in_("status", ["verified", "assigned", "ongoing", "resolved"])
     incidents = q.limit(500).execute().data or []
 
+    incidents = [
+        incident
+        for incident in incidents
+        if incident.get("latitude") is not None
+        and incident.get("longitude") is not None
+        and incident.get("primary_issue_type")
+    ]
+
     preview_by_incident_id: dict[str, dict] = {}
     incident_ids = [incident["id"] for incident in incidents if incident.get("id")]
     if incident_ids:

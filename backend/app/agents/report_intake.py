@@ -72,6 +72,8 @@ class ReportIntakeAgent:
         severity = detection.severity_score if detection else 1.5
         bbox = detection.bounding_box if detection else None
 
+        address_text = barangay.strip() if barangay and barangay.strip() else None
+
         sb = get_supabase()
         report_row = sb.table("reports").insert({
             "reporter_user_id": user_id,
@@ -79,7 +81,7 @@ class ReportIntakeAgent:
             "description": description,
             "latitude": latitude,
             "longitude": longitude,
-            "address_text": barangay,
+            "address_text": address_text,
             "photo_url": photo_url or "",
             "photo_urls": uploaded_photo_urls,
             "ai_suggested_type": detection.issue_type if detection else final_issue,
@@ -95,7 +97,7 @@ class ReportIntakeAgent:
             incident_id = rec.incident_id
             merged = True
         else:
-            inc = self.intel.create_incident(final_issue, latitude, longitude, severity, "citizen", barangay)
+            inc = self.intel.create_incident(final_issue, latitude, longitude, severity, "citizen")
             incident_id = inc["id"]
             sb.table("reports").update({"merged_incident_id": incident_id}).eq("id", report_row["id"]).execute()
             merged = False
