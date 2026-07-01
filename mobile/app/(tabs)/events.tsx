@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
-import { api } from '../lib/api';
+import { api } from '../../lib/api';
 
 interface Event {
   id: string;
@@ -39,7 +39,7 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 40, backgroundColor: '#f8fafc' },
+  container: { padding: 20, paddingBottom: 24, backgroundColor: '#f8fafc' },
   headerCard: { backgroundColor: '#ffffff', borderRadius: 22, padding: 18, borderWidth: 1, borderColor: '#e2e8f0', marginBottom: 12 },
   eyebrow: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 1.2, color: '#0066cc', fontWeight: '600' },
   title: { fontSize: 24, fontWeight: '700', color: '#0f172a', marginTop: 6 },
