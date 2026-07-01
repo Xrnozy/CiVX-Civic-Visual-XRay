@@ -43,6 +43,10 @@ class AttendanceCheckIn(BaseModel):
     selfie_url: str | None = None
 
 
+class AttendanceRejectBody(BaseModel):
+    reason: str | None = None
+
+
 class EcoQuestTaskCreate(BaseModel):
     title: str
     description: str | None = None
