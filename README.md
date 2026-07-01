@@ -35,7 +35,7 @@ Public demo: `civx.xrnozy.me` via Cloudflare Tunnel.
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11+ (Windows: install from python.org and enable Add Python to PATH, or use the `py` launcher)
 - Node.js 20+
 - FFmpeg on PATH
 - Supabase project with PostGIS enabled
@@ -150,8 +150,12 @@ If you see `ApiNotActivatedMapError`, the API is not enabled yet. `ERR_BLOCKED_B
 
 ```bash
 cd backend
-python -m venv venv
-venv\Scripts\activate   # Windows
+# On Windows, use the Python launcher if `python` is not on PATH:
+py -3 -m venv venv
+# PowerShell:
+. .\venv\Scripts\Activate.ps1
+# CMD:
+venv\Scripts\activate.bat
 pip install -r requirements.txt
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```

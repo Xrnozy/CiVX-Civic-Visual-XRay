@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { getFirebaseAuth } from './firebase';
 
 function normalizeApiBaseUrl(value: string) {
   const trimmed = value.trim();
@@ -36,8 +37,38 @@ function resolveApiBaseUrl() {
 const API_URL = resolveApiBaseUrl();
 const DEFAULT_TIMEOUT_MS = 15000;
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function getStoredOrFirebaseToken(forceRefresh = false) {
   const token = await AsyncStorage.getItem('civx_token');
+  if (token && !forceRefresh) return token;
+
+  try {
+    const user = getFirebaseAuth().currentUser;
+    if (!user) return token;
+    const freshToken = await user.getIdToken(forceRefresh);
+    await AsyncStorage.setItem('civx_token', freshToken);
+    return freshToken;
+  } catch {
+    return token;
+  }
+}
+
+function authErrorMessage(status: number, text: string) {
+  let detail = text;
+  try {
+    const parsed = JSON.parse(text) as { detail?: unknown };
+    if (typeof parsed.detail === 'string') detail = parsed.detail;
+  } catch {
+    // Use the raw response text below.
+  }
+
+  if (status === 401 && /missing auth token|invalid token/i.test(detail)) {
+    return 'Sign in required. Please sign in again to continue.';
+  }
+  return detail || `Request failed with status ${status}`;
+}
+
+async function request<T>(path: string, options: RequestInit, forceRefreshToken = false): Promise<T> {
+  const token = await getStoredOrFirebaseToken(forceRefreshToken);
   const headers: Record<string, string> = { ...(options.headers as Record<string, string> | undefined) };
   if (token) headers.Authorization = `Bearer ${token}`;
   if (!(options.body instanceof FormData)) {
@@ -59,7 +90,10 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   }
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Request failed with status ${res.status}`);
+    if (res.status === 401 && !forceRefreshToken && token) {
+      return request<T>(path, options, true);
+    }
+    throw new Error(authErrorMessage(res.status, text));
   }
 
   const contentType = res.headers.get('content-type') || '';
@@ -67,4 +101,8 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     return res.json();
   }
   return res.text() as unknown as T;
+}
+
+export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  return request<T>(path, options);
 }
