@@ -11,6 +11,7 @@ from app.services import passive_jobs, pipeline_storage, redis_queue
 from app.services.evidence_trust import evaluate_upload_trust
 from app.services.queue_mode import current_mode
 from app.services.redis_queue import STREAM_CLIP, stream_lengths
+from app.utils.pipeline_debug import pipeline_debug_log
 
 
 def enqueue_clip(
@@ -93,6 +94,20 @@ def enqueue_clip(
         "gps_trace_json": gps_trace_json or [],
     })
     passive_jobs.update_clip_job(jid, status="queued")
+
+    queue_depths = stream_lengths()
+    pipeline_debug_log(
+        "clip_enqueue.py:enqueue_clip",
+        "chunk enqueued",
+        {
+            "job_id": jid,
+            "video_chunk_id": video_chunk_id,
+            "trust_score": trust.trust_score,
+            "mode": mode,
+            "queue_depths": queue_depths,
+        },
+        "H-C",
+    )
 
     return {
         "ok": True,

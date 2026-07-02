@@ -10,9 +10,10 @@ from pathlib import Path
 from workers import _bootstrap  # noqa: F401
 from workers._common import match_gps, process_message
 
-from app.services import passive_jobs, pipeline_storage
+from app.services import passive_jobs, pipeline_cleanup, pipeline_storage
 from app.services.evidence_trust import frame_perceptual_hash
 from app.services.redis_queue import STREAM_REVIEW, ensure_consumer_groups, read_group
+from app.services.worker_registry import WorkerHeartbeat
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("review_worker")
@@ -58,15 +59,20 @@ def _handle(payload: dict) -> None:
         lng=lng,
         verification_status="needs_review",
     ))
+    if frame_path and frame_path != evidence_local:
+        pipeline_cleanup.delete_frame_file(frame_path)
 
 
 def main() -> None:
     ensure_consumer_groups()
+    hb = WorkerHeartbeat("review")
+    hb.start()
     logger.info("Review worker started (%s)", CONSUMER)
     while True:
         messages = read_group(STREAM_REVIEW, CONSUMER, count=5, block_ms=5000)
         for msg_id, payload in messages:
             process_message(STREAM_REVIEW, msg_id, payload, _handle)
+            hb.increment_jobs()
 
 
 if __name__ == "__main__":

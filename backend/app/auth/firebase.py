@@ -42,9 +42,43 @@ def init_firebase() -> None:
     if cred_path and os.path.exists(cred_path):
         cred = credentials.Certificate(cred_path)
         firebase_admin.initialize_app(cred)
+        _agent_log(
+            "firebase.py:init_firebase",
+            "initialized with service account",
+            {"cred_path": os.path.basename(cred_path), "project_id": settings.firebase_project_id or getattr(cred, "project_id", "")},
+            "H-token",
+        )
+        _firebase_initialized = True
     elif settings.firebase_project_id:
         firebase_admin.initialize_app(options={"projectId": settings.firebase_project_id})
-    _firebase_initialized = True
+        _agent_log(
+            "firebase.py:init_firebase",
+            "initialized with project id only",
+            {"project_id": settings.firebase_project_id},
+            "H-token",
+        )
+        _firebase_initialized = True
+    else:
+        _agent_log(
+            "firebase.py:init_firebase",
+            "firebase not configured",
+            {},
+            "H-token",
+        )
+
+
+def _normalize_bearer_token(raw: str | None) -> str:
+    token = (raw or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+    return token
+
+
+def _looks_like_jwt(token: str) -> bool:
+    if not token or token.startswith("{") or token.startswith("["):
+        return False
+    parts = token.split(".")
+    return len(parts) == 3 and all(parts)
 
 
 @dataclass
@@ -63,13 +97,35 @@ async def get_current_user(
     if not creds:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing auth token")
     init_firebase()
+    if not _firebase_initialized or not firebase_admin._apps:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Firebase auth is not configured on the server",
+        )
+
+    token = _normalize_bearer_token(creds.credentials)
+    if not _looks_like_jwt(token):
+        _agent_log(
+            "firebase.py:get_current_user",
+            "reject malformed token",
+            {"token_prefix": token[:12], "token_len": len(token)},
+            "H-token",
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
     try:
-        decoded = auth.verify_id_token(creds.credentials)
+        decoded = auth.verify_id_token(token, clock_skew_seconds=60, check_revoked=False)
     except Exception as exc:
+        _agent_log(
+            "firebase.py:get_current_user",
+            "verify_id_token failed",
+            {"error_type": type(exc).__name__, "error": str(exc)[:300]},
+            "H-token",
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
 
     firebase_uid = decoded["uid"]
-    email = decoded.get("email")
+    email = (decoded.get("email") or "").strip().lower() or None
     _agent_log(
         "firebase.py:get_current_user",
         "token verified",
@@ -83,6 +139,8 @@ async def get_current_user(
     if result.data:
         row = result.data[0]
         _agent_log("firebase.py:get_current_user", "found by firebase_uid", {"userId": row.get("id")}, "H5")
+        if (row.get("status") or "active") != "active":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is not active")
         role = (row.get("role") or "citizen").strip()
         if settings.demo_lgu_auto_role and role == "citizen":
             sb.table("users").update({"role": "lgu_staff"}).eq("id", row["id"]).execute()
@@ -100,12 +158,14 @@ async def get_current_user(
         email_result = (
             sb.table("users")
             .select("*")
-            .ilike("email", email.strip())
+            .ilike("email", email)
             .limit(1)
             .execute()
         )
         if email_result.data:
             row = email_result.data[0]
+            if (row.get("status") or "active") != "active":
+                raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is not active")
             if row.get("firebase_uid") != firebase_uid:
                 _agent_log(
                     "firebase.py:get_current_user",
@@ -115,7 +175,7 @@ async def get_current_user(
                 )
                 sb.table("users").update({
                     "firebase_uid": firebase_uid,
-                    "email": email,
+                    "email": email or row.get("email"),
                 }).eq("id", row["id"]).execute()
                 row["firebase_uid"] = firebase_uid
             role = (row.get("role") or "citizen").strip()

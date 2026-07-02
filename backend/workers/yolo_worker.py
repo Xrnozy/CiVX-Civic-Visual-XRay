@@ -5,15 +5,21 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import tempfile
+import time
 from pathlib import Path
+
+import cv2
+import numpy as np
 
 from workers import _bootstrap  # noqa: F401
 
 from app.config import settings
 from app.models.civic_issues import PASSIVE_SKIP_INCIDENT_SLUGS
-from app.services import passive_jobs
+from app.services import passive_jobs, pipeline_cleanup
 from app.services.confidence_router import route_detection, verification_status_for_action
 from app.services.evidence_trust import frame_perceptual_hash
+from app.services.gpu_lock import gpu_lock
 from app.services.queue_mode import current_mode, yolo_batch_for_mode
 from app.services.redis_queue import (
     STREAM_CANDIDATES,
@@ -27,6 +33,8 @@ from app.services.redis_queue import (
     requeue_with_retry,
     stream_lengths,
 )
+from app.services.worker_registry import WorkerHeartbeat
+from app.utils.pipeline_debug import pipeline_debug_log
 from detector import YOLODetector
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -34,10 +42,22 @@ logger = logging.getLogger("yolo_worker")
 CONSUMER = f"yolo-{os.getpid()}"
 
 _detector: YOLODetector | None = None
+_device_label: str = "cpu"
+
+
+def _resolve_device_label() -> str:
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            return str(torch.cuda.get_device_name(0))
+    except Exception:
+        pass
+    return "cpu"
 
 
 def _get_detector() -> YOLODetector:
-    global _detector
+    global _detector, _device_label
     if _detector is None:
         model_path = settings.yolo_model
         if not Path(model_path).is_absolute():
@@ -49,10 +69,32 @@ def _get_detector() -> YOLODetector:
             model_path=model_path,
             confidence=settings.yolo_confidence_medium,
         )
+        _device_label = _resolve_device_label()
     return _detector
 
 
-def _route_and_enqueue(det_payload: dict, issue_type: str, confidence: float, frames_with_issue: int) -> None:
+def _warmup_detector(hb: WorkerHeartbeat) -> None:
+    detector = _get_detector()
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        blank = np.zeros((640, 640, 3), dtype=np.uint8)
+        cv2.imwrite(tmp.name, blank)
+        path = tmp.name
+    try:
+        with gpu_lock("yolo:warmup"):
+            detector.detect_batch([path])
+    finally:
+        Path(path).unlink(missing_ok=True)
+    hb.set_model(loaded=True, name=settings.yolo_model, device=_device_label)
+    logger.info("YOLO ready — model=%s device=%s", settings.yolo_model, _device_label)
+
+
+def _route_and_enqueue(
+    det_payload: dict,
+    issue_type: str,
+    confidence: float,
+    frames_with_issue: int,
+    high_conf_frames: int = 0,
+) -> None:
     job_id = det_payload["job_id"]
     mode = det_payload.get("processing_mode") or current_mode(stream_lengths())
     trust = float(det_payload.get("trust_score") or 1.0)
@@ -61,6 +103,7 @@ def _route_and_enqueue(det_payload: dict, issue_type: str, confidence: float, fr
         confidence=confidence,
         trust_score=trust,
         frames_with_issue=frames_with_issue,
+        high_conf_frames=high_conf_frames,
         mode=mode,
     )
     verification = verification_status_for_action(action)
@@ -78,7 +121,25 @@ def _route_and_enqueue(det_payload: dict, issue_type: str, confidence: float, fr
     elif action == "review":
         enqueue(STREAM_REVIEW, {**base, "source": "yolo"})
     elif action == "discard":
+        pipeline_cleanup.delete_frame_file(det_payload.get("frame_path"))
         logger.info("Discarded job=%s issue=%s conf=%.2f frames=%d", job_id, issue_type, confidence, frames_with_issue)
+
+    pipeline_debug_log(
+        "yolo_worker.py:_route_and_enqueue",
+        "routing decision",
+        {
+            "job_id": job_id,
+            "issue_type": issue_type,
+            "confidence": confidence,
+            "frames_with_issue": frames_with_issue,
+            "high_conf_frames": high_conf_frames,
+            "trust_score": trust,
+            "mode": mode,
+            "action": action,
+            "verification": verification,
+        },
+        "H-B" if frames_with_issue < 2 else "H-E",
+    )
 
 
 def _flush_job_routing(job_id: str) -> None:
@@ -86,6 +147,7 @@ def _flush_job_routing(job_id: str) -> None:
     if not hits:
         passive_jobs.update_clip_job(job_id, status="discarded", error_message="No YOLO detections")
         passive_jobs.clear_yolo_hits(job_id)
+        pipeline_cleanup.cleanup_after_terminal_status(job_id, "discarded")
         return
 
     job = passive_jobs.get_clip_job(job_id) or {}
@@ -93,6 +155,7 @@ def _flush_job_routing(job_id: str) -> None:
         if issue_type in PASSIVE_SKIP_INCIDENT_SLUGS:
             continue
         count = int(entry.get("count", 0))
+        high_conf_count = int(entry.get("high_conf_count", 0))
         best = entry.get("best") or {}
         confidence = float(entry.get("best_confidence", 0))
         if not best:
@@ -111,10 +174,10 @@ def _flush_job_routing(job_id: str) -> None:
                     flags.append("perceptual_duplicate")
                     passive_jobs.append_suspicion_flags(job_id, ["perceptual_duplicate"])
             except Exception:
-                phash = None
+                pass
 
         det_payload = {**best, "trust_score": float(best.get("trust_score") or job.get("trust_score") or 1.0)}
-        _route_and_enqueue(det_payload, issue_type, confidence, count)
+        _route_and_enqueue(det_payload, issue_type, confidence, count, high_conf_count)
 
     passive_jobs.clear_yolo_hits(job_id)
 
@@ -125,10 +188,24 @@ def _process_frame_batch(batch: list[tuple[str, dict]]) -> None:
         return
 
     paths = [p["frame_path"] for _, p in frame_items]
-    results = _get_detector().detect_batch(paths)
+    t0 = time.monotonic()
+    with gpu_lock("yolo:batch"):
+        results = _get_detector().detect_batch(paths)
+    pipeline_debug_log(
+        "yolo_worker.py:_process_frame_batch",
+        "yolo batch inferred",
+        {
+            "batch_size": len(paths),
+            "device": _device_label,
+            "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "job_ids": list({p["job_id"] for _, p in frame_items}),
+        },
+        "H-D",
+    )
 
     for (_, payload), det in zip(frame_items, results):
         if det is None or det.issue_type in PASSIVE_SKIP_INCIDENT_SLUGS:
+            pipeline_cleanup.delete_frame_file(payload.get("frame_path"))
             continue
         frame_payload = {
             **payload,
@@ -149,6 +226,14 @@ def _process_frame_batch(batch: list[tuple[str, dict]]) -> None:
 
 def main() -> None:
     ensure_consumer_groups()
+    hb = WorkerHeartbeat("yolo")
+    hb.start()
+    try:
+        _warmup_detector(hb)
+    except Exception as exc:
+        logger.warning("YOLO warmup failed (will retry on first batch): %s", exc)
+        hb.set_model(loaded=False, name=settings.yolo_model)
+
     logger.info("YOLO worker started (%s)", CONSUMER)
     pending: list[tuple[str, dict]] = []
 
@@ -165,6 +250,19 @@ def main() -> None:
         if not should_flush:
             continue
 
+        if messages:
+            pipeline_debug_log(
+                "yolo_worker.py:main",
+                "yolo batch flush",
+                {
+                    "pending": len(pending),
+                    "batch_size": batch_size,
+                    "mode": mode,
+                    "new_messages": len(messages),
+                },
+                "H-D",
+            )
+
         try:
             completes = [(mid, p) for mid, p in pending if p.get("type") == "clip_complete"]
             frames = [(mid, p) for mid, p in pending if p.get("type") != "clip_complete"]
@@ -173,10 +271,12 @@ def main() -> None:
                 _process_frame_batch(frames)
                 for msg_id, _ in frames:
                     ack(STREAM_YOLO, msg_id)
+                hb.increment_jobs(len(frames))
 
             for msg_id, payload in completes:
                 _flush_job_routing(payload["job_id"])
                 ack(STREAM_YOLO, msg_id)
+                hb.increment_jobs()
 
         except Exception as exc:
             logger.exception("YOLO batch failed")
@@ -184,6 +284,7 @@ def main() -> None:
                 job_id = payload.get("job_id")
                 if job_id and requeue_with_retry(STREAM_YOLO, payload, str(exc)) is None:
                     passive_jobs.update_clip_job(job_id, status="failed", error_message=str(exc)[:500])
+                    pipeline_cleanup.cleanup_after_terminal_status(job_id, "failed")
                 ack(STREAM_YOLO, msg_id)
         pending = []
 

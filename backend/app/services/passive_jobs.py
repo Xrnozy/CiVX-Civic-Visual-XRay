@@ -7,12 +7,12 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from app.db import get_supabase
+from app.db import execute_logged, get_supabase
 
 
-def _maybe_single_data(query) -> dict[str, Any] | None:
+def _maybe_single_data(query, *, step: str = "maybe_single") -> dict[str, Any] | None:
     """Supabase returns None (not an empty response) when maybe_single finds no row."""
-    resp = query.maybe_single().execute()
+    resp = execute_logged(step, query.maybe_single(), hypothesis_id="H1,H2")
     if resp is None:
         return None
     return resp.data
@@ -94,10 +94,14 @@ def append_suspicion_flags(job_id: str, flags: list[str]) -> list[str]:
 
 
 def record_yolo_hit(job_id: str, issue_type: str, frame_payload: dict[str, Any], confidence: float) -> None:
+    from app.config import settings
+
     job = get_clip_job(job_id) or {}
     hits: dict[str, Any] = dict(job.get("yolo_hits_json") or {})
-    entry = hits.get(issue_type) or {"count": 0, "best": None, "best_confidence": 0.0}
+    entry = hits.get(issue_type) or {"count": 0, "high_conf_count": 0, "best": None, "best_confidence": 0.0}
     entry["count"] = int(entry.get("count", 0)) + 1
+    if confidence >= settings.yolo_confidence_high:
+        entry["high_conf_count"] = int(entry.get("high_conf_count", 0)) + 1
     if confidence >= float(entry.get("best_confidence", 0)):
         entry["best_confidence"] = confidence
         entry["best"] = copy.deepcopy(frame_payload)
@@ -206,7 +210,8 @@ def get_last_device_position(device_id: str) -> tuple[float, float] | None:
         .select("lat,lng,created_at")
         .eq("device_id", device_id)
         .order("created_at", desc=True)
-        .limit(1)
+        .limit(1),
+        step="passive_clip_jobs.last_position",
     )
     if not row or row.get("lat") is None:
         return None

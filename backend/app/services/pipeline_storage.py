@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import shutil
 import uuid
 from pathlib import Path
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 def _root() -> Path:
@@ -30,6 +33,14 @@ def save_clip(content: bytes, job_id: str | None = None) -> tuple[str, str]:
 
 def clip_path(job_id: str) -> Path:
     return _root() / "clips" / f"{job_id}.mp4"
+
+
+def frames_dir() -> Path:
+    return _root() / "frames"
+
+
+def clips_dir() -> Path:
+    return _root() / "clips"
 
 
 def frame_path(job_id: str, frame_index: int) -> Path:
@@ -59,5 +70,6 @@ def upload_evidence_to_supabase(local_path: str, object_key: str) -> str | None:
         bucket = "report-photos"
         sb.storage.from_(bucket).upload(object_key, data, {"content-type": "image/jpeg", "upsert": "true"})
         return sb.storage.from_(bucket).get_public_url(object_key)
-    except Exception:
+    except Exception as exc:
+        logger.warning("Supabase evidence upload failed for %s: %s", object_key, exc)
         return None

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import time
 
 import cv2
 
@@ -12,7 +13,7 @@ from workers import _bootstrap  # noqa: F401
 from workers._common import process_message
 
 from app.config import settings
-from app.services import passive_jobs, pipeline_storage
+from app.services import passive_jobs, pipeline_cleanup, pipeline_storage
 from app.services.evidence_trust import frame_perceptual_hash, is_perceptual_duplicate
 from app.services.queue_mode import current_mode, sample_fps_for_mode
 from app.services.redis_queue import (
@@ -23,6 +24,8 @@ from app.services.redis_queue import (
     read_group,
     stream_lengths,
 )
+from app.services.worker_registry import WorkerHeartbeat
+from app.utils.pipeline_debug import pipeline_debug_log
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("prefilter_worker")
@@ -37,6 +40,13 @@ def _blur_score(frame) -> float:
 def _handle(payload: dict) -> None:
     job_id = payload["job_id"]
     video_path = payload["video_path"]
+    t0 = time.monotonic()
+    pipeline_debug_log(
+        "prefilter_worker.py:_handle",
+        "prefilter started",
+        {"job_id": job_id, "video_path": bool(video_path)},
+        "H-A",
+    )
     passive_jobs.update_clip_job(job_id, status="prefiltering")
 
     job = passive_jobs.get_clip_job(job_id) or payload
@@ -93,8 +103,16 @@ def _handle(payload: dict) -> None:
         frame_num += 1
 
     cap.release()
+    clip = pipeline_storage.clip_path(job_id)
+    if clip.is_file():
+        try:
+            clip.unlink()
+        except OSError:
+            pass
+
     if yolo_count == 0:
         passive_jobs.update_clip_job(job_id, status="discarded", error_message="No usable frames")
+        pipeline_cleanup.cleanup_after_terminal_status(job_id, "discarded")
     else:
         passive_jobs.update_clip_job(job_id, status="yolo_processing")
         enqueue(STREAM_YOLO, {
@@ -106,15 +124,29 @@ def _handle(payload: dict) -> None:
             "capture_mode": job.get("capture_mode", "passive_camera"),
             "gps_trace_json": job.get("gps_trace_json") or [],
         })
+    pipeline_debug_log(
+        "prefilter_worker.py:_handle",
+        "prefilter completed",
+        {
+            "job_id": job_id,
+            "yolo_frames": yolo_count,
+            "elapsed_ms": int((time.monotonic() - t0) * 1000),
+            "sample_fps": fps,
+        },
+        "H-A",
+    )
 
 
 def main() -> None:
     ensure_consumer_groups()
+    hb = WorkerHeartbeat("prefilter")
+    hb.start()
     logger.info("Prefilter worker started (%s)", CONSUMER)
     while True:
         messages = read_group(STREAM_CLIP, CONSUMER, count=1, block_ms=5000)
         for msg_id, payload in messages:
             process_message(STREAM_CLIP, msg_id, payload, _handle)
+            hb.increment_jobs()
 
 
 if __name__ == "__main__":

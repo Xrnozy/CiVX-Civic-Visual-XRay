@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CivicMap } from '../../components/map/CivicMap';
 import { ISSUE_CATEGORIES } from '../../shared/constants';
+import { isEventOngoing } from '../../shared/eventLifecycle';
+
+const HIDDEN_MAP_INCIDENT_STATUSES = new Set(['resolved', 'archived']);
 
 interface Marker {
   id: string;
@@ -11,6 +14,8 @@ interface Marker {
   barangay?: string;
   status?: string;
   scheduled_start?: string;
+  scheduled_end?: string;
+  checkout_qr_code_token?: string | null;
   type: 'incident' | 'cleanup';
 }
 
@@ -41,8 +46,18 @@ export default function MobileMap() {
     fetch(`/api/maps/markers?${params}`)
       .then((r) => r.json())
       .then((d) => {
-        const nextIncidents = (d.incidents || []).map((i: Marker) => ({ ...i, type: 'incident' as const }));
-        const nextEvents = (d.cleanup_events || []).map((e: Marker) => ({ ...e, type: 'cleanup' as const }));
+        const nextIncidents = (d.incidents || [])
+          .filter((i: Marker) => !HIDDEN_MAP_INCIDENT_STATUSES.has(i.status ?? ''))
+          .map((i: Marker) => ({ ...i, type: 'incident' as const }));
+        const nextEvents = (d.cleanup_events || [])
+          .filter((e: Marker) =>
+            isEventOngoing({
+              approval_status: 'approved',
+              scheduled_end: e.scheduled_end,
+              checkout_qr_code_token: e.checkout_qr_code_token,
+            }),
+          )
+          .map((e: Marker) => ({ ...e, type: 'cleanup' as const }));
         setIncidents(nextIncidents);
         setEvents(nextEvents);
         setSelected((current) => current && [...nextIncidents, ...nextEvents].some((m) => m.id === current.id) ? current : null);

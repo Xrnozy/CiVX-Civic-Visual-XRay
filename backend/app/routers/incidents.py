@@ -7,6 +7,7 @@ from app.utils.audit import log_audit, sanitize_incident_public, sanitize_incide
 from app.utils.geocoding import resolve_barangay
 from app.utils.storage import resolve_photo_url, resolve_photo_urls
 from app.agents.lgu_triage import LGUTriageAgent
+from app.services.passive_evidence_reports import list_passive_reports_for_incident
 
 from app.utils.dispatch_routing import recommend_department
 
@@ -103,6 +104,16 @@ def list_incident_reports(incident_id: str, user: AuthUser | None = Depends(get_
             "photo_urls": resolve_photo_urls(report.get("photo_urls") if isinstance(report.get("photo_urls"), list) else []),
         }
         signed_reports.append(signed)
+
+    passive_reports = list_passive_reports_for_incident(incident_id, incident)
+    for report in passive_reports:
+        signed_reports.append({
+            **report,
+            "photo_url": resolve_photo_url(report.get("photo_url")),
+            "photo_urls": resolve_photo_urls(report.get("photo_urls") if isinstance(report.get("photo_urls"), list) else []),
+        })
+
+    signed_reports.sort(key=lambda r: r.get("created_at") or "", reverse=True)
     return signed_reports
 
 

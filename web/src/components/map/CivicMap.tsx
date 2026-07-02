@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
 import { MarkerClusterer, MarkerClustererEvents, type Cluster } from '@googlemaps/markerclusterer';
-import { DEFAULT_MAP_CENTER, DEFAULT_MAP_PIN_ZOOM, DEFAULT_MAP_ZOOM, MAP_CLUSTER_MAX_ZOOM, CIVIC_MAP_STYLES } from '../../shared/constants';
-import { mergeMapMarkersByProximity, MAP_MARKER_MERGE_RADIUS_M, haversineMeters } from '../../shared/mergeMapMarkers';
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_PIN_ZOOM, DEFAULT_MAP_ZOOM, CIVIC_MAP_STYLES } from '../../shared/constants';
+import { mergeMapMarkersByProximity, MAP_MARKER_MERGE_RADIUS_M } from '../../shared/mergeMapMarkers';
 import { buildGoogleMapsIssueIcon, CLEANUP_MARKER_COLOR, ECOQUEST_MARKER_COLOR } from '../../shared/mapMarkers';
+import {
+  fitMapToMarkers,
+  focusCluster,
+  focusMarkerForPreview,
+  moveCameraToPoint,
+  stepZoomMergedMarker,
+} from './mapFocus';
 
 interface MarkerData {
   id: string;
@@ -50,6 +57,8 @@ interface Props {
   flush?: boolean;
   /** Merge markers within this many meters (real-world). Default 1 m; set 0 to disable. */
   mergeProximityMeters?: number;
+  /** Increment to fit the map viewport to the current marker set (e.g. layer tab change). */
+  fitToMarkersRequest?: number;
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -58,9 +67,6 @@ function keyHint(key: string): string {
   if (key.length < 12) return '(check infra/.env)';
   return `${key.slice(0, 8)}…${key.slice(-4)}`;
 }
-
-const PREVIEW_CARD_HEIGHT = 256;
-const PREVIEW_MARKER_TAIL = 36;
 
 function measureMapChromeTop(mapEl: HTMLElement): number {
   const shell = mapEl.closest('.map-shell-immersive');
@@ -141,6 +147,7 @@ export function CivicMap({
   hideMapChrome = false,
   flush = false,
   mergeProximityMeters = MAP_MARKER_MERGE_RADIUS_M,
+  fitToMarkersRequest = 0,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
@@ -163,6 +170,7 @@ export function CivicMap({
   const openInfoMarkerIdRef = useRef<string | null>(null);
   const lastPinnedCoordsRef = useRef<string | null>(null);
   const displayMarkersRef = useRef<MarkerData[]>([]);
+  const focusGenerationRef = useRef(0);
 
   const centerLat = center.lat;
   const centerLng = center.lng;
@@ -248,28 +256,6 @@ export function CivicMap({
     return `${month} ${date.getDate()}`;
   }
 
-  /** Gentle zoom for marker preview — never zoom out, only in when map is too wide. */
-  function ensureMarkerZoom(): boolean {
-    if (!map) return false;
-    const zoom = map.getZoom();
-    const needsZoom = typeof zoom === 'number' && zoom < DEFAULT_MAP_PIN_ZOOM;
-    // #region agent log
-    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'cluster-zoom-fix',location:'CivicMap.tsx:ensureMarkerZoom',message:'ensureMarkerZoom called',data:{currentZoom:zoom,needsZoom,targetZoom:DEFAULT_MAP_PIN_ZOOM},timestamp:Date.now(),hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion
-    if (needsZoom) {
-      map.setZoom(DEFAULT_MAP_PIN_ZOOM);
-    }
-    return needsZoom;
-  }
-
-  function capMapZoom(maxZoom: number) {
-    if (!map) return;
-    const zoom = map.getZoom();
-    if (typeof zoom === 'number' && zoom > maxZoom) {
-      map.setZoom(maxZoom);
-    }
-  }
-
   function markerDataForGoogleMarker(gmarker: { __civxId?: string } | undefined) {
     if (!gmarker?.__civxId) return undefined;
     return displayMarkersRef.current.find((item) => item.id === gmarker.__civxId);
@@ -279,104 +265,19 @@ export function CivicMap({
     const gmaps = (window as any).google?.maps;
     if (!gmaps || !targetMap) return;
 
-    const currentZoom = targetMap.getZoom() ?? DEFAULT_MAP_ZOOM;
     const clusterMarkers = cluster.markers as Array<{ __civxId?: string }>;
-    const markerCount = cluster.count ?? clusterMarkers.length ?? 0;
-    let spreadM = 0;
-    if (cluster.bounds) {
-      const ne = cluster.bounds.getNorthEast();
-      const sw = cluster.bounds.getSouthWest();
-      spreadM = haversineMeters(sw.lat(), sw.lng(), ne.lat(), ne.lng());
-    }
+    const firstMarkerData = markerDataForGoogleMarker(clusterMarkers[0]);
 
     // #region agent log
-    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'cluster-zoom-fix',location:'CivicMap.tsx:handleClusterClick',message:'cluster clicked',data:{currentZoom,markerCount,spreadM,tight:spreadM<80},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8322dc'},body:JSON.stringify({sessionId:'8322dc',runId:'cluster-fix',hypothesisId:'H1',location:'CivicMap.tsx:handleClusterClick',message:'cluster click fired',data:{markerCount:cluster.count??clusterMarkers.length,firstId:firstMarkerData?.id,mergedCount:firstMarkerData?.merged_count??1},timestamp:Date.now()})}).catch(()=>{});
     // #endregion
 
-    targetMap.panTo(cluster.position);
-
-    const tightCluster = spreadM < 80;
-    if (tightCluster) {
-      const nextZoom = Math.min(Math.max(currentZoom + 1, DEFAULT_MAP_PIN_ZOOM), MAP_CLUSTER_MAX_ZOOM);
-      if (nextZoom > currentZoom) targetMap.setZoom(nextZoom);
-      const markerData = markerDataForGoogleMarker(clusterMarkers[0]);
-      if (markerData) onMarkerSelectRef.current?.(markerData);
-      return;
-    }
-
-    if (cluster.bounds) {
-      targetMap.fitBounds(cluster.bounds, 72);
-      gmaps.event.addListenerOnce(targetMap, 'idle', () => {
-        capMapZoom(MAP_CLUSTER_MAX_ZOOM);
-        // #region agent log
-        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'cluster-zoom-fix',location:'CivicMap.tsx:handleClusterClick',message:'cluster fitBounds capped',data:{resultZoom:targetMap.getZoom()},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
-        // #endregion
-      });
-      return;
-    }
-
-    const fallbackZoom = Math.min(currentZoom + 1, MAP_CLUSTER_MAX_ZOOM);
-    if (fallbackZoom > currentZoom) targetMap.setZoom(fallbackZoom);
-  }
-
-  /** Pan map so the marker sits below the preview card with room for the top filter bar. */
-  function panMapToMarkerPreviewAnchor(
-    gmaps: any,
-    markerData: MarkerData,
-    onDone?: () => void,
-  ) {
-    if (!map) {
-      onDone?.();
-      return;
-    }
-    const mapEl = map.getDiv() as HTMLElement | undefined;
-    if (!mapEl) {
-      onDone?.();
-      return;
-    }
-
-    const latLng = new gmaps.LatLng(markerData.latitude, markerData.longitude);
-    const overlay = new gmaps.OverlayView();
-    overlay.onAdd = () => {};
-    overlay.draw = () => {
-      const projection = overlay.getProjection();
-      if (!projection) return;
-
-      const mapRect = mapEl.getBoundingClientRect();
-      const topInset = measureMapChromeTop(mapEl);
-      const bottomPad = 28;
-      const markerPx = projection.fromLatLngToContainerPixel(latLng);
-      if (!markerPx) {
-        overlay.setMap(null);
-        onDone?.();
-        return;
+    void (async () => {
+      const result = await focusCluster(targetMap, gmaps, cluster);
+      if (result.shouldSelect && firstMarkerData) {
+        onMarkerSelectRef.current?.(firstMarkerData);
       }
-
-      const targetX = mapRect.width / 2;
-      const minMarkerY = topInset + PREVIEW_CARD_HEIGHT + PREVIEW_MARKER_TAIL + 12;
-      const maxMarkerY = mapRect.height - bottomPad - PREVIEW_MARKER_TAIL;
-      const targetY = Math.min(
-        maxMarkerY,
-        Math.max(minMarkerY, topInset + (mapRect.height - topInset - bottomPad) * 0.58),
-      );
-
-      const panX = markerPx.x - targetX;
-      const panY = markerPx.y - targetY;
-
-      overlay.setMap(null);
-
-      // #region agent log
-      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'preview-center-fix',location:'CivicMap.tsx:panMapToMarkerPreviewAnchor',message:'centering marker for preview',data:{markerId:markerData.id,targetX,targetY,topInset,panX,panY,mapW:mapRect.width,mapH:mapRect.height},timestamp:Date.now(),hypothesisId:'H-center'})}).catch(()=>{});
-      // #endregion
-
-      if (Math.abs(panX) <= 2 && Math.abs(panY) <= 2) {
-        onDone?.();
-        return;
-      }
-      gmaps.event.addListenerOnce(map, 'idle', () => onDone?.());
-      map.panBy(panX, panY);
-    };
-    overlay.setMap(map);
+    })();
   }
 
   /** Nudge map after the preview card is in the DOM so it is not clipped by chrome or edges. */
@@ -408,13 +309,9 @@ export function CivicMap({
 
     if (cardLeft < sidePad) {
       panX = cardLeft - sidePad;
-    } else if (cardRight > mapRect.width - sidePad) {
+    } else     if (cardRight > mapRect.width - sidePad) {
       panX = cardRight - (mapRect.width - sidePad);
     }
-
-    // #region agent log
-    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'preview-center-fix',location:'CivicMap.tsx:refinePreviewCardInView',message:'refine preview card',data:{cardId,cardTop,cardBottom,topInset,panX,panY},timestamp:Date.now(),hypothesisId:'H-center'})}).catch(()=>{});
-    // #endregion
 
     if (Math.abs(panX) > 2 || Math.abs(panY) > 2) {
       map.panBy(panX, panY);
@@ -547,10 +444,10 @@ export function CivicMap({
   }, [apiKey, hideMapChrome, centerLat, centerLng, zoom]);
 
   useEffect(() => {
-    if (!map || selectedLocation) return;
+    if (!map || selectedLocation || selectedMarkerId) return;
     map.setCenter(center);
     map.setZoom(zoom);
-  }, [map, centerLat, centerLng, zoom, selectedLocation]);
+  }, [map, centerLat, centerLng, zoom, selectedLocation, selectedMarkerId]);
 
   useEffect(() => {
     if (!map || !ref.current) return;
@@ -637,7 +534,25 @@ export function CivicMap({
           suppressMapClickRef.current = false;
         }, 120);
         event?.domEvent?.stopPropagation?.();
-        onMarkerSelectRef.current?.(mk);
+
+        const mergedCount = mk.merged_count ?? 1;
+
+        void (async () => {
+          if (mergedCount > 1) {
+            const ready = await stepZoomMergedMarker(
+              map,
+              gmaps,
+              mk.latitude,
+              mk.longitude,
+              mergedCount,
+            );
+            if (!ready) return;
+          }
+          // #region agent log
+          fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8322dc'},body:JSON.stringify({sessionId:'8322dc',runId:'cluster-fix',hypothesisId:'H7',location:'CivicMap.tsx:markerClick',message:'marker select',data:{markerId:mk.id,mergedCount,zoomAfter:map.getZoom?.()},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+          onMarkerSelectRef.current?.(mk);
+        })();
       });
       markerByIdRef.current.set(mk.id, pinMarker);
       return [pinMarker];
@@ -787,11 +702,12 @@ export function CivicMap({
       const pinKey = `${selectedLocation.latitude},${selectedLocation.longitude}`;
       if (lastPinnedCoordsRef.current !== pinKey) {
         lastPinnedCoordsRef.current = pinKey;
-        map.panTo({ lat: selectedLocation.latitude, lng: selectedLocation.longitude });
-        map.setZoom(DEFAULT_MAP_PIN_ZOOM);
-        // #region agent log
-        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'map-barangay-fix',location:'CivicMap.tsx:pinLocation',message:'map panned to pin',data:{pinKey},timestamp:Date.now(),hypothesisId:'H-map-pin'})}).catch(()=>{});
-        // #endregion
+        void moveCameraToPoint(
+          map,
+          gmaps,
+          selectedLocation.latitude,
+          selectedLocation.longitude,
+        );
       }
     } else {
       lastPinnedCoordsRef.current = null;
@@ -803,7 +719,6 @@ export function CivicMap({
       const clusterer = new MarkerClusterer({
         markers: gmarkers,
         map,
-        onClusterClick: handleClusterClick,
         renderer: {
           render: ({ count, position, markers: clusterMarkers }) => {
             const allCleanup = (clusterMarkers as Array<{ __civxMarkerType?: string }>).every(
@@ -824,6 +739,20 @@ export function CivicMap({
             });
             (clusterMarker as { __civxClusterTeal?: boolean }).__civxClusterTeal = allCleanup;
             (clusterMarker as { __civxClusterGreen?: boolean }).__civxClusterGreen = allEcoquest;
+
+            clusterMarker.addListener('click', (event: google.maps.MapMouseEvent) => {
+              suppressMapClickRef.current = true;
+              window.setTimeout(() => {
+                suppressMapClickRef.current = false;
+              }, 120);
+              event?.domEvent?.stopPropagation?.();
+              handleClusterClick(
+                event,
+                { count, position, markers: clusterMarkers } as Cluster,
+                map,
+              );
+            });
+
             return clusterMarker;
           },
         },
@@ -895,12 +824,7 @@ export function CivicMap({
       });
     }
 
-    const sameMarker = openInfoMarkerIdRef.current === markerKey;
-    // #region agent log
-    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'post-fix',location:'CivicMap.tsx:selectedMarkerEffect',message:'selectedMarker effect run',data:{selectedMarkerId,sameMarker,markerKey,displayMarkersCount:displayMarkers.length,infoWindowOpen:!!infoWindowRef.current?.getMap?.()},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
-    // #endregion
-
-    openInfoMarkerIdRef.current = markerKey;
+    const previouslyOpenMarker = openInfoMarkerIdRef.current;
 
     const bindPreviewCard = () => {
       const iwRoot = document.querySelector('.gm-style-iw') as HTMLElement | null;
@@ -944,20 +868,69 @@ export function CivicMap({
     };
 
     const openPreview = () => {
-      panMapToMarkerPreviewAnchor(gmaps, markerData, () => {
-        infoWindowRef.current.setContent(contentHtml);
-        infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
-        gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', bindPreviewCard);
-      });
+      infoWindowRef.current.setContent(contentHtml);
+      infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
+      gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', bindPreviewCard);
     };
 
-    const zoomAnimating = ensureMarkerZoom();
-    if (zoomAnimating) {
-      gmaps.event.addListenerOnce(map, 'idle', openPreview);
-    } else {
+    const mapEl = map.getDiv() as HTMLElement | undefined;
+    if (!mapEl) {
       openPreview();
+      return;
     }
+
+    const isReselect = previouslyOpenMarker === markerKey;
+    const currentZoom = map.getZoom();
+    const skipCamera =
+      isReselect &&
+      typeof currentZoom === 'number' &&
+      currentZoom >= DEFAULT_MAP_PIN_ZOOM;
+
+    openInfoMarkerIdRef.current = markerKey;
+
+    const generation = ++focusGenerationRef.current;
+
+    void (async () => {
+      if (skipCamera) {
+        // #region agent log
+        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8322dc'},body:JSON.stringify({sessionId:'8322dc',runId:'progressive-cluster',hypothesisId:'H3',location:'CivicMap.tsx:selectedMarkerEffect',message:'reselect skip camera',data:{selectedMarkerId,markerKey,currentZoom},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        openPreview();
+        return;
+      }
+
+      await focusMarkerForPreview(
+        map,
+        gmaps,
+        mapEl,
+        markerData.latitude,
+        markerData.longitude,
+        () => measureMapChromeTop(mapEl),
+      );
+      if (generation !== focusGenerationRef.current) return;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8322dc'},body:JSON.stringify({sessionId:'8322dc',runId:'progressive-cluster',hypothesisId:'H3',location:'CivicMap.tsx:selectedMarkerEffect',message:'focus complete, opening preview',data:{selectedMarkerId,markerKey,mergedCount:markerData.merged_count??1,finalZoom:map.getZoom?.()},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+
+      openPreview();
+    })();
+
+    return () => {
+      focusGenerationRef.current += 1;
+    };
   }, [map, displayMarkers, selectedMarkerId]);
+
+  useEffect(() => {
+    if (!map || !fitToMarkersRequest) return;
+    if (selectedLocation || selectedMarkerId) return;
+    if (!displayMarkers.length) return;
+
+    const gmaps = (window as any).google?.maps;
+    if (!gmaps) return;
+
+    void fitMapToMarkers(map, gmaps, displayMarkers);
+  }, [map, fitToMarkersRequest, displayMarkers, selectedLocation, selectedMarkerId]);
 
   if (mapError) {
     const enableUrl = `https://console.cloud.google.com/apis/library/maps-backend.googleapis.com?project=${MAPS_PROJECT_ID}`;

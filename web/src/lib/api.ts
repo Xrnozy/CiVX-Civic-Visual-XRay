@@ -51,6 +51,24 @@ export function clearAuthTokenCache(): void {
   cachedUid = null;
 }
 
+function isInvalidAuthResponse(status: number, body: string): boolean {
+  if (status !== 401) return false;
+  const lower = body.toLowerCase();
+  return lower.includes('invalid token') || lower.includes('missing auth token');
+}
+
+async function recoverFromInvalidAuth(): Promise<void> {
+  clearAuthTokenCache();
+  localStorage.removeItem('civx_token');
+  if (!isFirebaseConfigured) return;
+  try {
+    const { signOut } = await import('firebase/auth');
+    await signOut(getFirebaseAuth());
+  } catch {
+    // ignore sign-out errors
+  }
+}
+
 async function fetchWithAuth<T>(path: string, options: RequestInit, token: string | null): Promise<Response> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
@@ -73,6 +91,9 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
 
   if (!res.ok) {
     const errBody = await res.text();
+    if (isInvalidAuthResponse(res.status, errBody)) {
+      await recoverFromInvalidAuth();
+    }
     throw new Error(errBody);
   }
   return res.json();

@@ -6,6 +6,7 @@ from slowapi.errors import RateLimitExceeded
 from contextlib import asynccontextmanager
 
 from app.config import settings
+from app.auth.firebase import init_firebase
 from app.routers import (
     health, users, reports, incidents, cleanup, volunteers,
     attendance, ecoquest, passive, driver, maps, analytics, media, ws,
@@ -19,6 +20,11 @@ limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    try:
+        init_firebase()
+    except Exception as exc:
+        import logging
+        logging.getLogger(__name__).warning("Firebase init failed: %s", exc)
     try:
         ensure_consumer_groups()
     except Exception as exc:

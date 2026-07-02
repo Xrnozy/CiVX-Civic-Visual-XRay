@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ButtonPrimary, ButtonSecondaryPill } from '../ui/Buttons';
+import { ImageGalleryOverlay } from '../ui/ImageGalleryOverlay';
+import { ReportEvidencePhoto } from '../map/ReportEvidencePhoto';
 import { api } from '../../lib/api';
 import { IncidentStatusBadge, PriorityBadge, SourceBadge, formatLabel } from './IncidentBadges';
 
@@ -27,10 +29,12 @@ interface Report {
   id: string;
   issue_type: string;
   description?: string;
-  photo_url: string;
+  photo_url?: string;
+  photo_urls?: string[];
   address_text?: string;
   ai_suggested_type?: string;
   ai_confidence?: number;
+  ai_bounding_box?: Record<string, unknown> | null;
   ai_severity_score?: number;
   created_at: string;
 }
@@ -78,9 +82,30 @@ function timeAgo(iso: string): string {
 
 const STATUS_FLOW = ['detected', 'pending_review', 'verified', 'assigned', 'ongoing', 'resolved'];
 
+function reportImages(report: Report): string[] {
+  const list = Array.isArray(report.photo_urls) ? report.photo_urls.filter(Boolean) : [];
+  if (list.length > 0) return list;
+  return report.photo_url ? [report.photo_url] : [];
+}
+
+function allReportImages(reports: Report[]): string[] {
+  const seen = new Set<string>();
+  const urls: string[] = [];
+  for (const report of reports) {
+    for (const url of reportImages(report)) {
+      if (!seen.has(url)) {
+        seen.add(url);
+        urls.push(url);
+      }
+    }
+  }
+  return urls;
+}
+
 export function IncidentDetailPanel({ incident, departments, onAction, onClose }: Props) {
   const [reports, setReports] = useState<Report[]>([]);
   const [loadingReports, setLoadingReports] = useState(true);
+  const [gallery, setGallery] = useState<{ images: string[]; index: number } | null>(null);
   const [assignDept, setAssignDept] = useState(incident.suggested_department_id ?? '');
   const [checkers, setCheckers] = useState<Checker[]>([]);
   const [selectedChecker, setSelectedChecker] = useState('');
@@ -121,6 +146,12 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
     : null;
   const submittedBarangay = reports.find((r) => r.address_text?.trim())?.address_text?.trim();
   const displayBarangay = incident.barangay ?? submittedBarangay ?? 'Unknown';
+  const galleryImages = useMemo(() => allReportImages(reports), [reports]);
+
+  function openGallery(url: string) {
+    const index = galleryImages.indexOf(url);
+    if (index >= 0) setGallery({ images: galleryImages, index });
+  }
 
   async function run(action: () => Promise<unknown>) {
     setBusy(true);
@@ -139,7 +170,17 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
   const canResolve = ['assigned', 'ongoing', 'verified'].includes(incident.status);
 
   return (
-    <div className="store-utility-card flex h-full flex-col">
+    <div className="store-utility-card relative flex h-full flex-col">
+      {gallery ? (
+        <ImageGalleryOverlay
+          contained
+          className="absolute inset-0 z-50 rounded-[inherit]"
+          images={gallery.images}
+          index={gallery.index}
+          onClose={() => setGallery(null)}
+          onChange={(index) => setGallery((current) => (current ? { ...current, index } : null))}
+        />
+      ) : null}
       <div className="flex items-start justify-between gap-4 border-b border-hairline pb-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-widest text-primary">Incident Detail</p>
@@ -230,26 +271,32 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
           <p className="mt-2 text-sm text-ink-muted-48">No linked reports.</p>
         ) : (
           <div className="mt-3 space-y-3">
-            {reports.map((r) => (
-              <div key={r.id} className="flex gap-3 rounded-[11px] border border-hairline p-3">
-                {r.photo_url && (
-                  <img
-                    src={r.photo_url}
-                    alt="Report"
-                    className="h-16 w-16 shrink-0 rounded-sm object-cover"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold capitalize">{formatLabel(r.issue_type)}</p>
-                  {r.description && <p className="mt-1 text-xs text-ink-muted-80">{r.description}</p>}
-                  <p className="mt-1 text-xs text-ink-muted-48">
-                    {r.ai_confidence != null && `AI ${(r.ai_confidence * 100).toFixed(0)}%`}
-                    {r.ai_suggested_type && ` · ${formatLabel(r.ai_suggested_type)}`}
-                    {` · ${timeAgo(r.created_at)}`}
-                  </p>
+            {reports.map((r) => {
+              const thumb = reportImages(r)[0];
+              return (
+                <div key={r.id} className="flex gap-3 overflow-hidden rounded-[11px] border border-hairline p-3">
+                  {thumb ? (
+                    <ReportEvidencePhoto
+                      url={thumb}
+                      bbox={r.ai_bounding_box}
+                      label={r.ai_suggested_type ? formatLabel(r.ai_suggested_type) : formatLabel(r.issue_type)}
+                      onClick={() => openGallery(thumb)}
+                      className="rounded-[8px] border border-hairline"
+                      imageClassName="h-16 w-16 object-cover transition hover:opacity-90"
+                    />
+                  ) : null}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold capitalize">{formatLabel(r.issue_type)}</p>
+                    {r.description ? <p className="mt-1 line-clamp-3 text-xs text-ink-muted-80">{r.description}</p> : null}
+                    <p className="mt-1 text-xs text-ink-muted-48">
+                      {r.ai_confidence != null && `AI ${(r.ai_confidence * 100).toFixed(0)}%`}
+                      {r.ai_suggested_type && ` · ${formatLabel(r.ai_suggested_type)}`}
+                      {` · ${timeAgo(r.created_at)}`}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

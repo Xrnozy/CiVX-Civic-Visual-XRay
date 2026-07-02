@@ -69,6 +69,9 @@ export default function CameraScreen() {
   const accelSubRef = useRef<{ remove: () => void } | null>(null);
   const lastChunkIdRef = useRef<string | null>(null);
   const bumpCooldownRef = useRef(false);
+  const uploadsPendingRef = useRef(0);
+
+  const [uploadedCount, setUploadedCount] = useState(0);
 
   const selectedSource = useMemo(
     () => inputs.find((input) => input.id === selectedSourceId) ?? inputs[0],
@@ -156,10 +159,10 @@ export default function CameraScreen() {
     }
   }
 
-  async function uploadChunk(uri: string, chunkIndex: number) {
+  async function uploadChunk(uri: string, chunkIndex: number, gpsTraceSnapshot: GpsPoint[]) {
     const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
     const t = chunkIndex * (CHUNK_MS / 1000);
-    gpsTraceRef.current.push({ t, lat: loc.coords.latitude, lng: loc.coords.longitude });
+    const trace = [...gpsTraceSnapshot, { t, lat: loc.coords.latitude, lng: loc.coords.longitude }];
 
     const extension = uri.endsWith('.webm') ? 'webm' : 'mp4';
     const mimeType = extension === 'webm' ? 'video/webm' : 'video/mp4';
@@ -168,7 +171,7 @@ export default function CameraScreen() {
     form.append('chunk_index', String(chunkIndex));
     form.append('start_time', new Date(Date.now() - CHUNK_MS).toISOString());
     form.append('end_time', new Date().toISOString());
-    form.append('gps_trace_json', JSON.stringify(gpsTraceRef.current));
+    form.append('gps_trace_json', JSON.stringify(trace));
     form.append('video', { uri, name: `chunk_${chunkIndex}.${extension}`, type: mimeType } as unknown as Blob);
 
     const chunk = await api<{ id: string }>(`/api/passive/sessions/${sessionIdRef.current}/chunks`, {
@@ -179,14 +182,61 @@ export default function CameraScreen() {
     return chunk.id;
   }
 
+  function pipelineDebugLog(message: string, data: Record<string, unknown>, hypothesisId: string) {
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '8b92e3' },
+      body: JSON.stringify({
+        sessionId: '8b92e3',
+        runId: 'chunk-pipeline',
+        location: 'camera.tsx',
+        message,
+        data,
+        timestamp: Date.now(),
+        hypothesisId,
+      }),
+    }).catch(() => undefined);
+    // #endregion
+  }
+
+  function queueChunkUpload(uri: string, chunkIndex: number, gpsTraceSnapshot: GpsPoint[]) {
+    uploadsPendingRef.current += 1;
+    pipelineDebugLog('background upload started', { chunkIndex, pending: uploadsPendingRef.current }, 'H1');
+
+    void uploadChunk(uri, chunkIndex, gpsTraceSnapshot)
+      .then(() => {
+        setUploadedCount((count) => count + 1);
+        pipelineDebugLog('background upload finished', { chunkIndex, pending: uploadsPendingRef.current - 1 }, 'H1');
+      })
+      .catch(async (error) => {
+        const queue = JSON.parse((await AsyncStorage.getItem('chunk_queue')) || '[]');
+        queue.push({
+          sessionId: sessionIdRef.current,
+          index: chunkIndex,
+          uri,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        await AsyncStorage.setItem('chunk_queue', JSON.stringify(queue));
+        pipelineDebugLog('background upload failed', { chunkIndex, error: String(error) }, 'H1');
+      })
+      .finally(() => {
+        uploadsPendingRef.current = Math.max(0, uploadsPendingRef.current - 1);
+      });
+  }
+
   async function capturePassiveChunk() {
     if (!sessionIdRef.current || !passiveCameraRef.current || activeChunkRef.current || !recordingRef.current) return;
 
     activeChunkRef.current = true;
+    const chunkIndex = chunkIndexRef.current;
     try {
       const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
-      const t = chunkIndexRef.current * (CHUNK_MS / 1000);
+      const t = chunkIndex * (CHUNK_MS / 1000);
       gpsTraceRef.current.push({ t, lat: loc.coords.latitude, lng: loc.coords.longitude });
+      const gpsTraceSnapshot = [...gpsTraceRef.current];
+
+      pipelineDebugLog('chunk record started', { chunkIndex }, 'H2');
 
       const recorded = await withTimeout(
         passiveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 }),
@@ -196,14 +246,20 @@ export default function CameraScreen() {
       const uri = recorded?.uri;
       if (!uri) throw new Error('No video chunk was produced.');
 
-      await uploadChunk(uri, chunkIndexRef.current);
       chunkIndexRef.current += 1;
       setChunkCount(chunkIndexRef.current);
+      queueChunkUpload(uri, chunkIndex, gpsTraceSnapshot);
+
+      pipelineDebugLog('chunk record finished; upload pipelined', {
+        chunkIndex,
+        nextChunkIndex: chunkIndexRef.current,
+        uploadsPending: uploadsPendingRef.current,
+      }, 'H2');
     } catch (error) {
       const queue = JSON.parse((await AsyncStorage.getItem('chunk_queue')) || '[]');
       queue.push({
         sessionId: sessionIdRef.current,
-        index: chunkIndexRef.current,
+        index: chunkIndex,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       await AsyncStorage.setItem('chunk_queue', JSON.stringify(queue));
@@ -214,6 +270,9 @@ export default function CameraScreen() {
       }
     } finally {
       activeChunkRef.current = false;
+      if (recordingRef.current) {
+        void capturePassiveChunk();
+      }
     }
   }
 
@@ -221,7 +280,13 @@ export default function CameraScreen() {
     if (!sessionIdRef.current || !driveCameraRef.current || activeChunkRef.current || !recordingRef.current) return;
 
     activeChunkRef.current = true;
+    const chunkIndex = chunkIndexRef.current;
     try {
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Low });
+      const t = chunkIndex * (CHUNK_MS / 1000);
+      gpsTraceRef.current.push({ t, lat: loc.coords.latitude, lng: loc.coords.longitude });
+      const gpsTraceSnapshot = [...gpsTraceRef.current];
+
       const recorded = await withTimeout(
         driveCameraRef.current.recordAsync({ maxDuration: CHUNK_MS / 1000 }),
         RECORD_TIMEOUT_MS,
@@ -230,20 +295,23 @@ export default function CameraScreen() {
       const uri = recorded?.uri;
       if (!uri) throw new Error('No video chunk was produced.');
 
-      await uploadChunk(uri, chunkIndexRef.current);
       chunkIndexRef.current += 1;
       setChunkCount(chunkIndexRef.current);
+      queueChunkUpload(uri, chunkIndex, gpsTraceSnapshot);
     } catch (error) {
       const queue = JSON.parse((await AsyncStorage.getItem('chunk_queue')) || '[]');
       queue.push({
         sessionId: sessionIdRef.current,
-        index: chunkIndexRef.current,
+        index: chunkIndex,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
       await AsyncStorage.setItem('chunk_queue', JSON.stringify(queue));
       await driveCameraRef.current?.stopRecording().catch(() => undefined);
     } finally {
       activeChunkRef.current = false;
+      if (recordingRef.current) {
+        void captureDriveChunk();
+      }
     }
   }
 
@@ -287,13 +355,10 @@ export default function CameraScreen() {
       setSessionId(session.id);
       chunkIndexRef.current = 0;
       setChunkCount(0);
+      setUploadedCount(0);
       gpsTraceRef.current = [];
       recordingRef.current = true;
       setRecording(true);
-
-      timerRef.current = setInterval(() => {
-        void capturePassiveChunk();
-      }, CHUNK_MS);
 
       void capturePassiveChunk();
     } catch (error) {
@@ -332,15 +397,12 @@ export default function CameraScreen() {
       setSessionId(session.id);
       chunkIndexRef.current = 0;
       setChunkCount(0);
+      setUploadedCount(0);
       setDriverEvents(0);
       gpsTraceRef.current = [];
       recordingRef.current = true;
       setRecording(true);
       lastMagRef.current = 1;
-
-      timerRef.current = setInterval(() => {
-        void captureDriveChunk();
-      }, CHUNK_MS);
 
       void captureDriveChunk();
 
@@ -476,7 +538,9 @@ export default function CameraScreen() {
         {recording && mode === 'passive' && (
           <View style={styles.recordingBadge}>
             <View style={styles.recordingDot} />
-            <Text style={styles.recordingLabel}>Recording - {chunkCount} chunks</Text>
+            <Text style={styles.recordingLabel}>
+              Recording - {chunkCount} chunks{uploadedCount < chunkCount ? ` · ${uploadedCount} uploaded` : ''}
+            </Text>
           </View>
         )}
 
@@ -484,7 +548,7 @@ export default function CameraScreen() {
           <View style={styles.recordingBadge}>
             <View style={styles.recordingDot} />
             <Text style={styles.recordingLabel}>
-              Drive - {driverEvents} bumps - {chunkCount} chunks
+              Drive - {driverEvents} bumps - {chunkCount} chunks{uploadedCount < chunkCount ? ` · ${uploadedCount} uploaded` : ''}
             </Text>
           </View>
         )}

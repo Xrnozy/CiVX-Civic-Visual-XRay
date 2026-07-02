@@ -49,7 +49,7 @@ class Settings(BaseSettings):
     passive_video_max_new_tokens: int = 96
     locateanything_video_max_side: int = 896
     locateanything_image_max_side: int = 1024
-    locateanything_max_boxes_per_frame: int = 2
+    locateanything_max_boxes_per_frame: int = 8
     locateanything_min_box_area_ratio: float = 0.003
     locateanything_max_sky_center_ratio: float = 0.40
     ffmpeg_path: str = "ffmpeg"
@@ -81,11 +81,15 @@ class Settings(BaseSettings):
     yolo_batch_busy: int = 32
     yolo_confidence_high: float = 0.85
     yolo_confidence_medium: float = 0.50
+    yolo_auto_report_min_high_conf_frames: int = 3
     trust_threshold_trusted: float = 0.75
     trust_threshold_semi: float = 0.45
     blur_laplacian_min: float = 80.0
     frame_hash_max_distance: int = 5
     pipeline_upload_evidence_to_supabase: bool = True
+    gpu_lock_enabled: bool = True
+    gpu_lock_ttl_seconds: int = 120
+    gpu_lock_wait_seconds: int = 300
 
     @property
     def pipeline_storage_path(self) -> Path:

@@ -18,6 +18,7 @@ interface DetectionPreviewOverlayProps {
   videoRef?: RefObject<HTMLVideoElement | null>;
   onVideoTimeUpdate?: (time: number) => void;
   className?: string;
+  imageClassName?: string;
 }
 
 const BOX_COLORS = ['#ef4444', '#f97316', '#22c55e', '#3b82f6', '#a855f7'];
@@ -121,6 +122,7 @@ export function DetectionPreviewOverlay({
   videoRef: externalVideoRef,
   onVideoTimeUpdate,
   className = '',
+  imageClassName,
 }: DetectionPreviewOverlayProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const internalVideoRef = useRef<HTMLVideoElement>(null);
@@ -238,12 +240,12 @@ export function DetectionPreviewOverlay({
   }, [drawOverlay, mediaKind, videoRef]);
 
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`}>
+    <div ref={containerRef} className={`relative overflow-hidden ${className || 'w-full'}`}>
       {mediaKind === 'image' ? (
         <img
           src={mediaUrl}
           alt="Preview with detections"
-          className="max-h-[min(70vh,560px)] w-full object-contain"
+          className={imageClassName ?? 'max-h-[min(70vh,560px)] w-full object-contain'}
           onLoad={() => {
             mediaReadyRef.current = true;
             drawOverlay();

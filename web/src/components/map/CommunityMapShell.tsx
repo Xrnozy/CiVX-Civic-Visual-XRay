@@ -19,6 +19,7 @@ import { StatusBadge } from '../lgu/attendance/StatusBadge';
 import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useProfile } from '../../hooks/useProfile';
+import { isEventOngoing } from '../../shared/eventLifecycle';
 import type { AttendanceStatus } from '../../types/attendance';
 
 export interface CommunityMapMarker {
@@ -60,6 +61,8 @@ interface VolunteerEventStatus {
   status?: AttendanceStatus;
 }
 
+const HIDDEN_MAP_INCIDENT_STATUSES = new Set(['resolved', 'archived']);
+
 const VOLUNTEER_STATUS_LABELS: Record<AttendanceStatus, string> = {
   registered: "You're registered",
   'checked-in': "You're checked in",
@@ -92,6 +95,7 @@ export function CommunityMapShell({
   const [eventMarkers, setEventMarkers] = useState<CommunityMapMarker[]>([]);
   const [ecoquestMarkers, setEcoquestMarkers] = useState<CommunityMapMarker[]>([]);
   const [mapLayer, setMapLayer] = useState<MapLayer>('issues');
+  const [fitToMarkersRequest, setFitToMarkersRequest] = useState(0);
   const [issueType, setIssueType] = useState('');
   const [status, setStatus] = useState('');
   const [selectedMarker, setSelectedMarker] = useState<CommunityMapMarker | null>(null);
@@ -123,6 +127,8 @@ export function CommunityMapShell({
         title: string;
         barangay?: string;
         scheduled_start?: string;
+        scheduled_end?: string;
+        checkout_qr_code_token?: string | null;
         preview_photo_url?: string;
       }>;
       ecoquest_tasks?: Array<{
@@ -136,8 +142,22 @@ export function CommunityMapShell({
       }>;
     }>(`/api/maps/markers${query ? `?${query}` : ''}`)
       .then((data) => {
-        setIncidentMarkers(data.incidents.map((incident) => ({ ...incident, type: 'incident' as const })));
-        setEventMarkers((data.cleanup_events ?? []).map((event) => ({ ...event, type: 'cleanup' as const })));
+        setIncidentMarkers(
+          data.incidents
+            .filter((incident) => !HIDDEN_MAP_INCIDENT_STATUSES.has(incident.status ?? ''))
+            .map((incident) => ({ ...incident, type: 'incident' as const })),
+        );
+        setEventMarkers(
+          (data.cleanup_events ?? [])
+            .filter((event) =>
+              isEventOngoing({
+                approval_status: 'approved',
+                scheduled_end: event.scheduled_end,
+                checkout_qr_code_token: event.checkout_qr_code_token,
+              }),
+            )
+            .map((event) => ({ ...event, type: 'cleanup' as const })),
+        );
         setEcoquestMarkers(
           (data.ecoquest_tasks ?? []).map((task) => ({
             ...task,
@@ -304,6 +324,15 @@ export function CommunityMapShell({
     setGallery(null);
   }
 
+  const handleMapLayerChange = useCallback((layer: MapLayer) => {
+    setMapLayer(layer);
+    setSelectedMarker(null);
+    setExpanded(false);
+    setJoinError('');
+    setGallery(null);
+    setFitToMarkersRequest((count) => count + 1);
+  }, []);
+
   const openLguReview = useCallback(
     (incidentId: string) => {
       navigate(`/lgu/queue?incident=${encodeURIComponent(incidentId)}`);
@@ -412,7 +441,7 @@ export function CommunityMapShell({
         <MapTopBar
           subNav={subNav}
           mapLayer={mapLayer}
-          onMapLayerChange={setMapLayer}
+          onMapLayerChange={handleMapLayerChange}
           issueType={issueType}
           onIssueTypeChange={setIssueType}
           status={status}
@@ -450,6 +479,7 @@ export function CommunityMapShell({
               setJoinError('');
               setGallery(null);
             }}
+            fitToMarkersRequest={fitToMarkersRequest}
           />
         </div>
 

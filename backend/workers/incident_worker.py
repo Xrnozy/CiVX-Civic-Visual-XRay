@@ -14,8 +14,13 @@ from app.agents.lgu_triage import LGUTriageAgent
 from app.config import settings
 from app.db import get_supabase
 from app.models.civic_issues import PASSIVE_SKIP_INCIDENT_SLUGS, compute_severity
-from app.services import passive_jobs, pipeline_storage
+from app.services import passive_jobs, pipeline_cleanup, pipeline_storage
 from app.services.evidence_trust import CAPTURE_MODES_BLOCKED, frame_perceptual_hash
+from app.services.passive_evidence_reports import (
+    _bbox_from_payload,
+    create_passive_report,
+    resolve_evidence_photo_url,
+)
 from app.services.redis_queue import (
     STREAM_CANDIDATES,
     STREAM_REVIEW,
@@ -23,6 +28,8 @@ from app.services.redis_queue import (
     enqueue,
     read_group,
 )
+from app.services.worker_registry import WorkerHeartbeat
+from app.utils.pipeline_debug import pipeline_debug_log
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("incident_worker")
@@ -44,6 +51,7 @@ def _create_or_merge(payload: dict) -> None:
     issue_type = payload["issue_type"]
     if issue_type in PASSIVE_SKIP_INCIDENT_SLUGS:
         passive_jobs.update_clip_job(job_id, status="discarded")
+        pipeline_cleanup.cleanup_after_terminal_status(job_id, "discarded")
         return
 
     job = passive_jobs.get_clip_job(job_id) or {}
@@ -61,10 +69,22 @@ def _create_or_merge(payload: dict) -> None:
     source = payload.get("source", "yolo")
 
     if verification in ("needs_review", "locate_unsure", "pending_locate", "rejected") or trust < settings.trust_threshold_semi:
+        pipeline_debug_log(
+            "incident_worker.py:_create_or_merge",
+            "sent to review (verification/trust gate)",
+            {"job_id": job_id, "issue_type": issue_type, "verification": verification, "trust": trust},
+            "H-E",
+        )
         _send_to_review(job, payload, verification)
         return
 
     if verification == "auto_confirmed" and trust < settings.trust_threshold_trusted:
+        pipeline_debug_log(
+            "incident_worker.py:_create_or_merge",
+            "sent to review (semi_trusted_auto_block)",
+            {"job_id": job_id, "issue_type": issue_type, "trust": trust},
+            "H-E",
+        )
         _send_to_review(job, payload, "semi_trusted_auto_block")
         return
 
@@ -103,8 +123,10 @@ def _create_or_merge(payload: dict) -> None:
             evidence_local,
             f"passive/{job_id}_{frame_index}.jpg",
         )
+        if frame_path != evidence_local:
+            pipeline_cleanup.delete_frame_file(frame_path)
 
-    passive_jobs.insert_evidence(passive_jobs.build_evidence_row(
+    ev_row = passive_jobs.insert_evidence(passive_jobs.build_evidence_row(
         job,
         {**payload, "issue_type": issue_type, "confidence": confidence, "trust_score": trust, "verification_status": verification},
         frame_path=evidence_local or frame_path,
@@ -115,7 +137,23 @@ def _create_or_merge(payload: dict) -> None:
         incident_id=incident_id,
     ))
 
-    bbox = payload.get("bounding_box") or {}
+    photo_for_report = resolve_evidence_photo_url(
+        ev_row["id"],
+        evidence_url,
+        ev_row.get("frame_path"),
+    )
+    create_passive_report(
+        incident_id=incident_id,
+        job=job,
+        payload={**payload, "issue_type": issue_type, "confidence": confidence},
+        photo_url=photo_for_report,
+        lat=lat,
+        lng=lng,
+        severity=severity,
+        evidence_id=ev_row["id"],
+    )
+
+    bbox = _bbox_from_payload(payload) or payload.get("bounding_box") or {}
     det_row = {
         "detected_issue_type": issue_type,
         "confidence": confidence,
@@ -136,6 +174,13 @@ def _create_or_merge(payload: dict) -> None:
 
     triage.apply_triage(incident_id)
     passive_jobs.update_clip_job(job_id, status="report_created")
+    pipeline_cleanup.cleanup_after_terminal_status(job_id, "report_created")
+    pipeline_debug_log(
+        "incident_worker.py:_create_or_merge",
+        "incident report created",
+        {"job_id": job_id, "incident_id": incident_id, "issue_type": issue_type, "merge": rec.action == "merge"},
+        "H-success",
+    )
 
     if job.get("video_chunk_id"):
         sb.table("video_chunks").update({"processing_status": "completed"}).eq("id", job["video_chunk_id"]).execute()
@@ -148,11 +193,14 @@ def _handle(payload: dict) -> None:
 
 def main() -> None:
     ensure_consumer_groups()
+    hb = WorkerHeartbeat("incident")
+    hb.start()
     logger.info("Incident worker started (%s)", CONSUMER)
     while True:
         messages = read_group(STREAM_CANDIDATES, CONSUMER, count=1, block_ms=5000)
         for msg_id, payload in messages:
             process_message(STREAM_CANDIDATES, msg_id, payload, _handle)
+            hb.increment_jobs()
 
 
 if __name__ == "__main__":

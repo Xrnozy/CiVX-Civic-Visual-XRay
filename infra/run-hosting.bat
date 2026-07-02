@@ -45,7 +45,7 @@ if exist "%BACKEND%\venv\Scripts\python.exe" (
 )
 
 echo Starting passive pipeline workers...
-call "%INFRA%\run-workers.bat"
+call "%INFRA%\run-ai-pipeline.bat"
 
 echo Starting Caddy (static web/dist on :80)...
 start "CiVX Caddy" cmd /k "cd /d "%ROOT%" && "%INFRA%\run-caddy.bat"

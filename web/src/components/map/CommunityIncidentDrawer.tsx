@@ -1,4 +1,5 @@
 import { IncidentStatusBadge, formatLabel } from '../lgu/IncidentBadges';
+import { ReportEvidencePhoto } from './ReportEvidencePhoto';
 import type { ReactNode } from 'react';
 
 export interface CommunityIncidentDetail {
@@ -92,6 +93,16 @@ function allImages(reports: CommunityIncidentReport[]): string[] {
   return urls;
 }
 
+function reportByImageUrl(reports: CommunityIncidentReport[]): Map<string, CommunityIncidentReport> {
+  const map = new Map<string, CommunityIncidentReport>();
+  for (const report of reports) {
+    for (const url of reportImages(report)) {
+      if (!map.has(url)) map.set(url, report);
+    }
+  }
+  return map;
+}
+
 function submitterLabel(value?: string): string {
   if (value === 'lgu') return 'LGU';
   return 'Community member';
@@ -99,6 +110,7 @@ function submitterLabel(value?: string): string {
 
 export function CommunityIncidentDrawer({ incident, reports, loading, onClose, overlay = false, onOpenGallery, footer }: Props) {
   const gallery = allImages(reports);
+  const reportForUrl = reportByImageUrl(reports);
 
   function openGallery(url: string) {
     const index = gallery.indexOf(url);
@@ -202,20 +214,21 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
           ) : (
             <div className="mt-3 rounded-[11px] border border-hairline bg-canvas-parchment px-4 py-3">
               <div className="flex flex-wrap gap-3 pl-1">
-                {gallery.map((url) => (
-                  <button
-                    key={url}
-                    type="button"
-                    onClick={() => openGallery(url)}
-                    className="my-1 ml-2 shrink-0 overflow-hidden rounded-[11px] border border-hairline bg-canvas text-left"
-                  >
-                    <img
-                      src={url}
-                      alt="Incident evidence"
-                      className="h-24 w-24 object-contain p-1 transition hover:scale-105"
+                {gallery.map((url) => {
+                  const report = reportForUrl.get(url);
+                  const label = report?.ai_suggested_type ? formatLabel(report.ai_suggested_type) : undefined;
+                  return (
+                    <ReportEvidencePhoto
+                      key={url}
+                      url={url}
+                      bbox={report?.ai_bounding_box}
+                      label={label}
+                      onClick={() => openGallery(url)}
+                      className="my-1 ml-2 shrink-0 overflow-hidden rounded-[11px] border border-hairline bg-canvas"
+                      imageClassName="h-24 w-24 object-contain p-1 transition hover:scale-105"
                     />
-                  </button>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}
@@ -230,20 +243,21 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
           ) : (
             <div className="mt-3 space-y-3">
               {reports.map((report) => (
-                <article key={report.id} className="rounded-[11px] border border-hairline p-3">
+                <article key={report.id} className="overflow-hidden rounded-[11px] border border-hairline p-3">
                   <div className="flex gap-3">
                     {firstImage(report) && (
-                      <button
-                        type="button"
+                      <ReportEvidencePhoto
+                        url={firstImage(report)!}
+                        bbox={report.ai_bounding_box}
+                        label={report.ai_suggested_type ? formatLabel(report.ai_suggested_type) : formatLabel(report.issue_type)}
                         onClick={() => openGallery(firstImage(report)!)}
-                        className="shrink-0 overflow-hidden rounded-[8px]"
-                      >
-                        <img src={firstImage(report)} alt="Report preview" className="h-16 w-16 object-cover transition hover:scale-105" />
-                      </button>
+                        className="rounded-[8px] border border-hairline"
+                        imageClassName="h-16 w-16 object-cover"
+                      />
                     )}
                     <div className="min-w-0 flex-1 text-sm">
                       <p className="font-semibold capitalize text-ink">{formatLabel(report.issue_type)}</p>
-                      {report.description ? <p className="mt-1 text-ink-muted-80">{report.description}</p> : null}
+                      {report.description ? <p className="mt-1 line-clamp-3 text-ink-muted-80">{report.description}</p> : null}
                       <p className="mt-1 text-xs capitalize text-ink-muted-48">
                         {submitterLabel(report.submitter_type)}
                         {incident.source ? ` · ${incidentSource}` : ''}
@@ -253,14 +267,32 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
                       </p>
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-2 text-xs text-ink-muted-80 sm:grid-cols-2">
-                    <p>Report ID: {report.id}</p>
-                    <p className="capitalize">Source: {incidentSource}</p>
-                    <p>Coordinates: {asCoord(report.latitude)}, {asCoord(report.longitude)}</p>
-                    <p>Submitted: {asLocalTime(report.created_at)}</p>
-                    <p className="capitalize">Status: {incidentStatus}</p>
-                    <p>Barangay: {report.address_text || 'Unknown'}</p>
-                  </div>
+                  <dl className="mt-3 grid gap-x-4 gap-y-2 text-xs text-ink-muted-80 sm:grid-cols-2">
+                    <div className="min-w-0">
+                      <dt className="text-ink-muted-48">Report ID</dt>
+                      <dd className="break-all font-mono text-[11px]">{report.id}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-muted-48">Source</dt>
+                      <dd className="capitalize">{incidentSource}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-muted-48">Coordinates</dt>
+                      <dd>{asCoord(report.latitude)}, {asCoord(report.longitude)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-muted-48">Submitted</dt>
+                      <dd>{asLocalTime(report.created_at)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-muted-48">Status</dt>
+                      <dd className="capitalize">{incidentStatus}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-ink-muted-48">Barangay</dt>
+                      <dd>{report.address_text || 'Unknown'}</dd>
+                    </div>
+                  </dl>
                 </article>
               ))}
             </div>

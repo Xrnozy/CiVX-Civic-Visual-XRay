@@ -199,6 +199,73 @@ class LocateAnythingWorker:
         kept.sort(key=lambda b: (b["x2"] - b["x1"]) * (b["y2"] - b["y1"]), reverse=True)
         return kept[:max_boxes]
 
+    @staticmethod
+    def parse_labeled_regions(answer: str, image_width: int, image_height: int) -> list[dict[str, Any]]:
+        """Pair <ref> labels with following <box> tokens (multi-category detect output)."""
+        regions: list[dict[str, Any]] = []
+        current_label: str | None = None
+        parts = re.split(r"(<ref>.*?</ref>)", answer, flags=re.IGNORECASE | re.DOTALL)
+        for part in parts:
+            ref_match = re.match(r"<ref>(.*?)</ref>", part, flags=re.IGNORECASE | re.DOTALL)
+            if ref_match:
+                current_label = ref_match.group(1).strip()
+                continue
+            for m in re.finditer(r"<box><(\d+)><(\d+)><(\d+)><(\d+)></box>", part):
+                x1, y1, x2, y2 = [int(g) for g in m.groups()]
+                regions.append({
+                    "label": current_label,
+                    "x1": x1 / 1000 * image_width,
+                    "y1": y1 / 1000 * image_height,
+                    "x2": x2 / 1000 * image_width,
+                    "y2": y2 / 1000 * image_height,
+                })
+
+        if regions:
+            return regions
+
+        for box in LocateAnythingWorker.parse_boxes(answer, image_width, image_height):
+            regions.append({**box, "label": None})
+        return regions
+
+    @staticmethod
+    def filter_labeled_regions(
+        regions: list[dict[str, Any]],
+        image_width: int,
+        image_height: int,
+        *,
+        min_area_ratio: float = 0.003,
+        max_sky_center_ratio: float = 0.40,
+        max_boxes: int = 8,
+    ) -> list[dict[str, Any]]:
+        """Filter labeled regions using the same heuristics as filter_boxes."""
+        if not regions or image_width <= 0 or image_height <= 0:
+            return []
+
+        kept: list[dict[str, Any]] = []
+        for region in regions:
+            box = {
+                "x1": float(region["x1"]),
+                "y1": float(region["y1"]),
+                "x2": float(region["x2"]),
+                "y2": float(region["y2"]),
+            }
+            filtered = LocateAnythingWorker.filter_boxes(
+                [box],
+                image_width,
+                image_height,
+                min_area_ratio=min_area_ratio,
+                max_sky_center_ratio=max_sky_center_ratio,
+                max_boxes=1,
+            )
+            if filtered:
+                kept.append({**filtered[0], "label": region.get("label")})
+
+        kept.sort(
+            key=lambda r: (r["x2"] - r["x1"]) * (r["y2"] - r["y1"]),
+            reverse=True,
+        )
+        return kept[:max_boxes]
+
 
 def resolve_device() -> str:
     from app.config import settings

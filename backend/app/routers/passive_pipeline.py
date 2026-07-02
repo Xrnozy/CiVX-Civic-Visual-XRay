@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+import os
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.auth.firebase import AuthUser, get_current_user
 from app.config import settings
+from app.db import get_supabase
 from app.services import passive_jobs
 from app.services.clip_enqueue import enqueue_clip
 from app.services.evidence_trust import hash_nonce
-from app.services.queue_mode import queue_status_payload
-from app.services.redis_queue import stream_lengths
 
 router = APIRouter(tags=["passive-pipeline"])
 
@@ -93,18 +94,34 @@ async def passive_upload(
     }
 
 
+@router.get("/api/passive/evidence/{evidence_id}/image")
+def get_passive_evidence_image(evidence_id: str):
+    """Serve stored passive frame when Supabase URL is missing (local evidence copy)."""
+    sb = get_supabase()
+    row = (
+        sb.table("passive_evidence")
+        .select("frame_path,evidence_url")
+        .eq("id", evidence_id)
+        .maybe_single()
+        .execute()
+        .data
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Evidence not found")
+
+    path = row.get("frame_path")
+    if path and os.path.isfile(path):
+        return FileResponse(path, media_type="image/jpeg")
+
+    raise HTTPException(status_code=404, detail="Evidence image file not found on server")
+
+
 @router.get("/api/passive/job/{job_id}")
 def get_passive_job(job_id: str, user: AuthUser = Depends(get_current_user)):
     job = passive_jobs.get_clip_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
-
-
-@router.get("/api/system/queue-status")
-def system_queue_status():
-    lengths = stream_lengths()
-    return queue_status_payload(lengths)
 
 
 @router.get("/api/passive/review-queue")
