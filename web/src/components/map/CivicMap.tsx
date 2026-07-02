@@ -259,7 +259,7 @@ export function CivicMap({
       const minY = Math.min(relY(cardRect.top), markerPx.y - markerPad);
       const maxY = Math.max(relY(cardRect.bottom), markerPx.y + markerPad);
 
-      const topInset = 88;
+      const topInset = -200;
       const edgePad = 20;
       const targetCenterX = mapRect.width / 2;
       const targetCenterY = topInset + (mapRect.height - topInset - edgePad) / 2;

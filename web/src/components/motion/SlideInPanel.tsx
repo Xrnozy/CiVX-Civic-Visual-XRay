@@ -6,7 +6,7 @@ interface Props {
   className?: string;
 }
 
-/** Centered reveal for map drawers — transform/opacity only. */
+/** Left-side reveal for map drawers — transform/opacity only. */
 export function SlideInPanel({ children, className = '' }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -15,8 +15,8 @@ export function SlideInPanel({ children, className = '' }: Props) {
       if (!panelRef.current || prefersReducedMotion()) return;
       gsap.fromTo(
         panelRef.current,
-        { scale: 0.94, autoAlpha: 0, y: 12 },
-        { scale: 1, autoAlpha: 1, y: 0, duration: 0.34, ease: 'power2.out', transformOrigin: 'center center' },
+        { x: -20, autoAlpha: 0 },
+        { x: 0, autoAlpha: 1, duration: 0.34, ease: 'power2.out', transformOrigin: 'left center' },
       );
     },
     { scope: panelRef },

@@ -445,7 +445,7 @@ html.mobile-demo-active .motion-page {
 }
 
 .map-drawer-panel {
-  @apply absolute top-4 bottom-4 left-1/2 z-30 flex w-[min(calc(100%-2rem),420px)] -translate-x-1/2 sm:top-6 sm:bottom-6 sm:w-[min(92%,480px)] sm:max-w-[480px];
+  @apply absolute top-4 bottom-4 left-4 z-30 flex w-[min(calc(100%-2rem),420px)] sm:left-6 sm:top-6 sm:bottom-6 sm:w-[min(42%,480px)] sm:min-w-[320px];
 }
 
 .mobile-demo-qr-overlay {
