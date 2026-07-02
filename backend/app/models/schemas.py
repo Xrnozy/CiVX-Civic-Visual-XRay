@@ -1,4 +1,5 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from typing import Literal
 
 
 class ReportCreate(BaseModel):
@@ -77,6 +78,26 @@ class AttendanceRejectBody(BaseModel):
     reason: str | None = None
 
 
+class EcoQuestPartyEntry(BaseModel):
+    type: Literal["user", "external", "manual"]
+    ref_id: str | None = None
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def validate_entry(self):
+        if self.type in ("user", "external"):
+            if not self.ref_id or not self.ref_id.strip():
+                raise ValueError(f"{self.type} entry requires ref_id")
+            if self.name:
+                raise ValueError(f"{self.type} entry must not include name")
+        elif self.type == "manual":
+            if not self.name or not self.name.strip():
+                raise ValueError("manual entry requires name")
+            if self.ref_id:
+                raise ValueError("manual entry must not include ref_id")
+        return self
+
+
 class EcoQuestTaskCreate(BaseModel):
     title: str
     description: str | None = None
@@ -86,6 +107,8 @@ class EcoQuestTaskCreate(BaseModel):
     barangay: str | None = None
     reward_type: str | None = None
     required_proof: dict | None = None
+    collaborators: list[EcoQuestPartyEntry] = Field(default_factory=list)
+    sponsors: list[EcoQuestPartyEntry] = Field(default_factory=list)
 
 
 class EcoQuestTaskUpdate(BaseModel):

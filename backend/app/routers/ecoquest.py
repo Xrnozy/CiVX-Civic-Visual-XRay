@@ -3,12 +3,34 @@ from fastapi import APIRouter, Depends
 
 from app.auth.firebase import AuthUser, get_current_user, require_roles
 from app.db import get_supabase
-from app.models.schemas import EcoQuestTaskCreate, EcoQuestSubmit, EcoQuestTaskUpdate
+from app.models.schemas import EcoQuestPartyEntry, EcoQuestTaskCreate, EcoQuestSubmit, EcoQuestTaskUpdate
 from app.agents.ecoquest_verification import EcoQuestVerificationAgent
 from app.utils.audit import log_audit
 
 router = APIRouter(prefix="/api/ecoquest", tags=["ecoquest"])
 LGU = ("lgu_admin", "lgu_staff")
+
+
+def _party_rows(task_id: str, party_role: str, entries: list[EcoQuestPartyEntry]) -> list[dict]:
+    rows = []
+    for index, entry in enumerate(entries):
+        row = {
+            "task_id": task_id,
+            "party_role": party_role,
+            "entry_type": entry.type,
+            "sort_order": index,
+            "user_id": None,
+            "external_partner_id": None,
+            "manual_name": None,
+        }
+        if entry.type == "user":
+            row["user_id"] = entry.ref_id
+        elif entry.type == "external":
+            row["external_partner_id"] = entry.ref_id
+        else:
+            row["manual_name"] = entry.name.strip()
+        rows.append(row)
+    return rows
 
 
 @router.get("/tasks")
@@ -29,12 +51,19 @@ def get_task(task_id: str):
 @router.post("/tasks")
 def create_task(body: EcoQuestTaskCreate, user: AuthUser = Depends(require_roles(*LGU))):
     sb = get_supabase()
-    data = body.model_dump()
+    data = body.model_dump(exclude={"collaborators", "sponsors"})
     if body.latitude and body.longitude:
         data["location"] = f"SRID=4326;POINT({body.longitude} {body.latitude})"
     data["qr_code_token"] = str(uuid.uuid4())
     row = sb.table("ecoquest_tasks").insert(data).execute().data[0]
-    log_audit(user.id, "create_ecoquest_task", "ecoquest_task", row["id"], {"title": body.title})
+    task_id = row["id"]
+    party_rows = (
+        _party_rows(task_id, "collaborator", body.collaborators)
+        + _party_rows(task_id, "sponsor", body.sponsors)
+    )
+    if party_rows:
+        sb.table("ecoquest_task_party_entries").insert(party_rows).execute()
+    log_audit(user.id, "create_ecoquest_task", "ecoquest_task", task_id, {"title": body.title})
     return row
 
 

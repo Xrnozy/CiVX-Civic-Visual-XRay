@@ -49,6 +49,8 @@ ACCOUNT_TYPE_TO_ROLE = {
 LGU_TEAM_ROLES = ("lgu_admin", "lgu_staff", "field_worker")
 ASSIGNABLE_ROLES = ("lgu_staff", "field_worker", "field_checker", "lgu_admin", "citizen")
 USER_LIST_FIELDS = "id, full_name, email, role, barangay, registration_completed_at, created_at"
+ECOQUEST_SELECTABLE_FIELDS = "id, full_name, email, role, barangay, organization_name, registration_completed_at"
+ECOQUEST_SELECTABLE_ROLES = ("organizer", "lgu_staff", "lgu_admin")
 
 
 @router.get("/me")
@@ -148,6 +150,27 @@ def update_me(body: UserProfileUpdate, user: AuthUser = Depends(get_current_user
         **row,
         "registration_completed": bool(row.get("registration_completed_at")),
     }
+
+
+@router.get("/ecoquest-selectables")
+def list_ecoquest_selectables(
+    q: str = "",
+    user: AuthUser = Depends(require_roles("lgu_admin", "lgu_staff")),
+):
+    """Users selectable as EcoQuest collaborators or sponsors."""
+    sb = get_supabase()
+    query = (
+        sb.table("users")
+        .select(ECOQUEST_SELECTABLE_FIELDS)
+        .in_("role", list(ECOQUEST_SELECTABLE_ROLES))
+        .not_.is_("registration_completed_at", "null")
+        .order("full_name")
+    )
+    term = q.strip()
+    if term:
+        pattern = f"%{term}%"
+        query = query.or_(f"full_name.ilike.{pattern},email.ilike.{pattern},organization_name.ilike.{pattern}")
+    return query.limit(20).execute().data or []
 
 
 @router.get("/lgu-team")

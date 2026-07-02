@@ -10,7 +10,7 @@ from app.routers import (
     health, users, reports, incidents, cleanup, volunteers,
     attendance, ecoquest, passive, driver, maps, analytics, media, ws,
     departments, registration_invites, analyzer, passive_pipeline, event_photos,
-    demo, dispatch,
+    demo, dispatch, external_partners,
 )
 from app.services.redis_queue import ensure_consumer_groups
 
@@ -50,6 +50,7 @@ app.include_router(registration_invites.router)
 app.include_router(reports.router)
 app.include_router(incidents.router)
 app.include_router(departments.router)
+app.include_router(external_partners.router)
 app.include_router(cleanup.router)
 app.include_router(event_photos.router)
 app.include_router(volunteers.router)
