@@ -1,7 +1,16 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { ButtonPrimary, ButtonSecondaryPill } from '../../components/ui/Buttons';
+import {
+  PartySlotSection,
+  partySlotToEntry,
+  type PartySlot,
+} from '../../components/ecoquest/PartySlotSection';
+import {
+  LocationPickerSection,
+  hasValidLocation,
+} from '../../components/map/LocationPickerSection';
 import { api } from '../../lib/api';
-import { DEFAULT_MAP_CENTER, ECOQUEST_TASK_TYPES, type EcoQuestTaskType } from '../../shared/constants';
+import { ECOQUEST_TASK_TYPES, formatDefaultMapCoordinates, type EcoQuestTaskType } from '../../shared/constants';
 
 interface RequiredProof {
   gps?: boolean;
@@ -47,6 +56,24 @@ interface Submission {
   ecoquest_tasks?: Task;
   users?: SubmissionUser;
 }
+
+const DEFAULT_COORDS = formatDefaultMapCoordinates();
+
+const EMPTY_FORM = {
+  title: '',
+  description: '',
+  task_type: ECOQUEST_TASK_TYPES[0] as EcoQuestTaskType,
+  barangay: '',
+  latitude: DEFAULT_COORDS.latitude,
+  longitude: DEFAULT_COORDS.longitude,
+  reward_type: '',
+  requireGps: true,
+  requireBefore: true,
+  requireAfter: true,
+  requireQr: true,
+  collaboratorSlots: [] as PartySlot[],
+  sponsorSlots: [] as PartySlot[],
+};
 
 const TASK_TYPE_LABELS: Record<string, string> = {
   clean_sidewalk: 'Clean sidewalk',
@@ -98,31 +125,8 @@ export default function LGUEcoQuestPage() {
   const [showForm, setShowForm] = useState(false);
   const [tab, setTab] = useState<'tasks' | 'review'>('tasks');
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState<{
-    title: string;
-    description: string;
-    task_type: EcoQuestTaskType;
-    barangay: string;
-    latitude: number;
-    longitude: number;
-    reward_type: string;
-    requireGps: boolean;
-    requireBefore: boolean;
-    requireAfter: boolean;
-    requireQr: boolean;
-  }>({
-    title: '',
-    description: '',
-    task_type: ECOQUEST_TASK_TYPES[0],
-    barangay: '',
-    latitude: DEFAULT_MAP_CENTER.lat,
-    longitude: DEFAULT_MAP_CENTER.lng,
-    reward_type: '',
-    requireGps: true,
-    requireBefore: true,
-    requireAfter: true,
-    requireQr: true,
-  });
+  const [formError, setFormError] = useState('');
+  const [form, setForm] = useState(EMPTY_FORM);
 
   const loadTasks = useCallback(() => {
     api<Task[]>('/api/ecoquest/tasks').then(setTasks).catch(() => setTasks([]));
@@ -145,6 +149,11 @@ export default function LGUEcoQuestPage() {
 
   async function createTask(e: FormEvent) {
     e.preventDefault();
+    if (!hasValidLocation(form.latitude, form.longitude)) {
+      setFormError('Pin the task location on the map before publishing.');
+      return;
+    }
+    setFormError('');
     setCreating(true);
     try {
       await api('/api/ecoquest/tasks', {
@@ -154,9 +163,11 @@ export default function LGUEcoQuestPage() {
           description: form.description || null,
           task_type: form.task_type,
           barangay: form.barangay || null,
-          latitude: form.latitude,
-          longitude: form.longitude,
+          latitude: Number(form.latitude),
+          longitude: Number(form.longitude),
           reward_type: form.reward_type || null,
+          collaborators: form.collaboratorSlots.map(partySlotToEntry).filter(Boolean),
+          sponsors: form.sponsorSlots.map(partySlotToEntry).filter(Boolean),
           required_proof: {
             gps: form.requireGps,
             before_photo: form.requireBefore,
@@ -165,7 +176,7 @@ export default function LGUEcoQuestPage() {
           },
         }),
       });
-      setForm((f) => ({ ...f, title: '', description: '', barangay: '', reward_type: '' }));
+      setForm(EMPTY_FORM);
       setShowForm(false);
       load();
     } finally {
@@ -224,99 +235,114 @@ export default function LGUEcoQuestPage() {
       </div>
 
       {showForm && (
-        <form onSubmit={createTask} className="store-utility-card mt-6 space-y-4">
+        <form onSubmit={createTask} className="store-utility-card mt-6 space-y-6">
           <h2 className="font-semibold">New EcoQuest Task</h2>
-          <div className="grid gap-4 md:grid-cols-2">
-            <label className="block text-sm">
-              Title
-              <input
-                required
-                value={form.title}
-                onChange={(e) => setForm({ ...form, title: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-                placeholder="e.g. Clean sidewalk near Barangay Hall"
-              />
-            </label>
-            <label className="block text-sm">
-              Task type
-              <select
-                value={form.task_type}
-                onChange={(e) => setForm({ ...form, task_type: e.target.value as EcoQuestTaskType })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-              >
-                {ECOQUEST_TASK_TYPES.map((t) => (
-                  <option key={t} value={t}>{formatLabel(t)}</option>
-                ))}
-              </select>
-            </label>
-            <label className="block text-sm md:col-span-2">
-              Description
-              <textarea
-                value={form.description}
-                onChange={(e) => setForm({ ...form, description: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-                rows={2}
-                placeholder="Instructions for volunteers"
-              />
-            </label>
-            <label className="block text-sm">
-              Barangay
-              <input
-                value={form.barangay}
-                onChange={(e) => setForm({ ...form, barangay: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-              />
-            </label>
-            <label className="block text-sm">
-              Reward type (optional)
-              <input
-                value={form.reward_type}
-                onChange={(e) => setForm({ ...form, reward_type: e.target.value })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-                placeholder="e.g. service_hours, certificate"
-              />
-            </label>
-            <label className="block text-sm">
-              Latitude
-              <input
-                type="number"
-                step="any"
-                value={form.latitude}
-                onChange={(e) => setForm({ ...form, latitude: parseFloat(e.target.value) })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-              />
-            </label>
-            <label className="block text-sm">
-              Longitude
-              <input
-                type="number"
-                step="any"
-                value={form.longitude}
-                onChange={(e) => setForm({ ...form, longitude: parseFloat(e.target.value) })}
-                className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-              />
-            </label>
-          </div>
-          <fieldset>
-            <legend className="text-sm font-medium">Required proof</legend>
-            <div className="mt-2 flex flex-wrap gap-4 text-sm">
-              {([
-                ['requireGps', 'GPS check-in'],
-                ['requireBefore', 'Before photo'],
-                ['requireAfter', 'After photo'],
-                ['requireQr', 'QR validation'],
-              ] as const).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block text-sm">
+                  Title
                   <input
-                    type="checkbox"
-                    checked={form[key]}
-                    onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
+                    required
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
+                    placeholder="e.g. Clean sidewalk near Barangay Hall"
                   />
-                  {label}
                 </label>
-              ))}
+                <label className="block text-sm">
+                  Task type
+                  <select
+                    value={form.task_type}
+                    onChange={(e) => setForm({ ...form, task_type: e.target.value as EcoQuestTaskType })}
+                    className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
+                  >
+                    {ECOQUEST_TASK_TYPES.map((t) => (
+                      <option key={t} value={t}>{formatLabel(t)}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm md:col-span-2">
+                  Description
+                  <textarea
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
+                    rows={2}
+                    placeholder="Instructions for volunteers"
+                  />
+                </label>
+                <label className="block text-sm">
+                  Barangay
+                  <input
+                    value={form.barangay}
+                    onChange={(e) => setForm({ ...form, barangay: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
+                  />
+                </label>
+                <label className="block text-sm">
+                  Reward type (optional)
+                  <input
+                    value={form.reward_type}
+                    onChange={(e) => setForm({ ...form, reward_type: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
+                    placeholder="e.g. service_hours, certificate"
+                  />
+                </label>
+              </div>
+
+              <PartySlotSection
+                label="Collaborators"
+                hint="People or organizations helping coordinate this task."
+                addLabel="Add Collaborator"
+                slots={form.collaboratorSlots}
+                onChange={(collaboratorSlots) => setForm({ ...form, collaboratorSlots })}
+              />
+
+              <PartySlotSection
+                label="Sponsors"
+                hint="Organizations or contacts sponsoring rewards or recognition."
+                addLabel="Add Sponsor"
+                slots={form.sponsorSlots}
+                onChange={(sponsorSlots) => setForm({ ...form, sponsorSlots })}
+              />
+
+              <fieldset>
+                <legend className="text-sm font-medium">Required proof</legend>
+                <div className="mt-2 flex flex-wrap gap-4 text-sm">
+                  {([
+                    ['requireGps', 'GPS check-in'],
+                    ['requireBefore', 'Before photo'],
+                    ['requireAfter', 'After photo'],
+                    ['requireQr', 'QR validation'],
+                  ] as const).map(([key, label]) => (
+                    <label key={key} className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        checked={form[key]}
+                        onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
+                      />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
             </div>
-          </fieldset>
+
+            <div className="rounded-[20px] border border-hairline bg-canvas-parchment p-5">
+              <LocationPickerSection
+                embedded
+                latitude={form.latitude}
+                longitude={form.longitude}
+                onChange={(lat, lng) => setForm({ ...form, latitude: lat, longitude: lng })}
+                label="Task location"
+                hint="Pin where volunteers should perform the task and check in."
+              />
+            </div>
+          </div>
+
+          {formError && <p className="text-sm text-red-600">{formError}</p>}
+
           <ButtonPrimary type="submit" disabled={creating}>
             {creating ? 'Creating…' : 'Publish Task'}
           </ButtonPrimary>
