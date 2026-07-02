@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, ScrollView, Text, StyleSheet, TouchableOpacity, View } from 'react-native';
-import { Link } from 'expo-router';
+import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { api } from '../../lib/api';
 import { colors, productShadow, radii, type } from '../../styles/theme';
@@ -89,11 +89,9 @@ export default function AccountScreen() {
         </View>
 
         {!user && (
-          <Link href="/login" asChild>
-            <TouchableOpacity style={styles.signInButton}>
-              <Text style={styles.signInText}>Sign in</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity style={styles.signInButton} onPress={() => router.push('/login')}>
+            <Text style={styles.signInText}>Sign in</Text>
+          </TouchableOpacity>
         )}
       </View>
 

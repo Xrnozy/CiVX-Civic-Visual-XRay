@@ -90,27 +90,32 @@ export default function MobileReport() {
   }
 
   return (
-    <form className="space-y-4 p-4" onSubmit={(e) => void onSubmit(e)}>
-      <div className="ui-card">
-        <p className="ui-card-title">Citizen report</p>
-        <h2 className="mt-1 text-lg font-semibold">Photo + GPS report</h2>
+    <form className="mobile-report-screen" onSubmit={(e) => void onSubmit(e)}>
+      <div className="mobile-report-hero ui-card">
+        <p className="ui-card-title">Citizen reporting</p>
+        <h2>Report an issue in a few taps.</h2>
+        <p>Capture a photo, tag the problem, and help the city respond faster.</p>
       </div>
 
-      <div className="ui-card space-y-3">
+      <div className="mobile-report-camera">
         <input
           ref={fileRef}
           type="file"
           accept="image/*"
           capture="environment"
-          className="w-full text-sm"
+          className="mobile-report-file"
           onChange={(e) => onFileChange(e.target.files?.[0] ?? null)}
         />
         {preview ? (
-          <img src={preview} alt="Report preview" className="max-h-48 w-full rounded-xl object-cover" />
-        ) : null}
+          <img src={preview} alt="Report preview" className="mobile-report-preview" />
+        ) : (
+          <div className="mobile-report-camera-empty">Preview appears here after capture</div>
+        )}
+      </div>
 
+      <div className="mobile-report-panel ui-card">
         <label className="block text-sm">
-          <span className="text-ink-muted-48">Issue type</span>
+          <span className="mobile-report-label">Issue type</span>
           <select className="filter-select mt-1 w-full" value={issueType} onChange={(e) => setIssueType(e.target.value)}>
             {ISSUE_CATEGORIES.filter((c) => c !== 'cleanup_event').map((c) => (
               <option key={c} value={c}>
@@ -121,9 +126,9 @@ export default function MobileReport() {
         </label>
 
         <label className="block text-sm">
-          <span className="text-ink-muted-48">Locate Anything (optional prompt)</span>
+          <span className="mobile-report-label">Locate Anything (optional prompt)</span>
           <input
-            className="mt-1 w-full rounded-xl border border-hairline px-3 py-2"
+            className="mt-1 w-full px-3 py-2"
             placeholder="e.g. overflowing trash bin"
             value={locatePrompt}
             onChange={(e) => setLocatePrompt(e.target.value)}
@@ -131,17 +136,16 @@ export default function MobileReport() {
         </label>
 
         <button type="button" className="btn-secondary-pill w-full text-sm" disabled={analyzing || !file} onClick={() => void analyzePhoto()}>
-          {analyzing ? 'Analyzing…' : 'Analyze with AI'}
+          {analyzing ? 'Analyzing...' : 'Analyze with AI'}
         </button>
         {aiResult ? (
           <p className="text-xs text-primary">
-            Suggested: {aiResult.ai_suggested_type || aiResult.issue_type} ·{' '}
-            {Math.round((aiResult.confidence || 0) * 100)}% confidence
+            Suggested: {aiResult.ai_suggested_type || aiResult.issue_type} - {Math.round((aiResult.confidence || 0) * 100)}% confidence
           </p>
         ) : null}
 
         <textarea
-          className="w-full rounded-xl border border-hairline px-3 py-2 text-sm"
+          className="w-full px-3 py-2 text-sm"
           rows={3}
           placeholder="Optional description"
           value={description}
@@ -153,7 +157,7 @@ export default function MobileReport() {
       {message ? <p className="text-sm text-primary">{message}</p> : null}
 
       <button type="submit" className="btn-primary w-full justify-center" disabled={submitting || !file}>
-        {submitting ? 'Submitting…' : 'Submit report'}
+        {submitting ? 'Submitting...' : 'Submit report'}
       </button>
     </form>
   );

@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { colors } from '../styles/theme';
+import FullscreenGate from '../components/FullscreenGate';
 
 const headerOptions = {
   headerStyle: { backgroundColor: colors.canvas },
@@ -10,14 +11,17 @@ const headerOptions = {
 
 export default function RootLayout() {
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(tabs)" />
-      <Stack.Screen name="login" options={{ ...headerOptions, headerShown: true, title: 'Sign in' }} />
-      <Stack.Screen name="report" options={{ ...headerOptions, headerShown: true, title: 'Report issue' }} />
-      <Stack.Screen name="event-detail" options={{ ...headerOptions, headerShown: true, title: 'Event details' }} />
-      <Stack.Screen name="ecoquest-detail" options={{ ...headerOptions, headerShown: true, title: 'EcoQuest task' }} />
-      <Stack.Screen name="passive" options={{ ...headerOptions, headerShown: true, title: 'Passive recording' }} />
-      <Stack.Screen name="driver" options={{ ...headerOptions, headerShown: true, title: 'Driver dashcam' }} />
-    </Stack>
+    <>
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="login" options={{ ...headerOptions, headerShown: true, title: 'Sign in' }} />
+        <Stack.Screen name="report" options={{ ...headerOptions, headerShown: true, title: 'Report issue' }} />
+        <Stack.Screen name="event-detail" options={{ ...headerOptions, headerShown: true, title: 'Event details' }} />
+        <Stack.Screen name="ecoquest-detail" options={{ ...headerOptions, headerShown: true, title: 'EcoQuest task' }} />
+        <Stack.Screen name="passive" options={{ ...headerOptions, headerShown: true, title: 'Passive recording' }} />
+        <Stack.Screen name="driver" options={{ ...headerOptions, headerShown: true, title: 'Driver dashcam' }} />
+      </Stack>
+      <FullscreenGate />
+    </>
   );
 }

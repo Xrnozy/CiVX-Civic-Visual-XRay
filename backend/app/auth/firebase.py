@@ -166,4 +166,9 @@ async def get_optional_user(
 ) -> AuthUser | None:
     if not creds:
         return None
-    return await get_current_user(creds)
+    try:
+        return await get_current_user(creds)
+    except HTTPException as exc:
+        if exc.status_code == status.HTTP_401_UNAUTHORIZED:
+            return None
+        raise

@@ -1,13 +1,6 @@
-const STORAGE_KEY = 'civx_demo_session_token';
+import { mobileDemoBaseUrl } from './mobileDemoUrl';
 
-function mobileDemoBaseUrl(): string {
-  const envUrl = import.meta.env.VITE_MOBILE_DEMO_URL as string | undefined;
-  if (envUrl?.trim()) return envUrl.trim().replace(/\/$/, '');
-  if (typeof window !== 'undefined') {
-    return `${window.location.origin}/mobile`;
-  }
-  return 'https://civx.xrnozy.me/mobile';
-}
+const STORAGE_KEY = 'civx_demo_session_token';
 
 function generateClientToken(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {

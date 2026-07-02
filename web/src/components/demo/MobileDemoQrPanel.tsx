@@ -1,45 +1,105 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
+import { mobileDemoUrlForSession, resolveMobileDemoSessionUrl } from '../../mobile/mobileDemoUrl';
 
-const PRODUCTION_MOBILE_DEMO = 'https://civx.xrnozy.me/mobile';
+interface SessionResponse {
+  token: string;
+  url: string;
+}
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-function mobileDemoUrl(): string {
-  const envUrl = import.meta.env.VITE_MOBILE_DEMO_URL as string | undefined;
-  if (envUrl?.trim()) return envUrl.trim().replace(/\/$/, '');
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return `${window.location.origin}/mobile`;
-    }
+function parseApiError(text: string): string {
+  try {
+    const json = JSON.parse(text) as { detail?: string };
+    if (json.detail) return json.detail;
+  } catch {
+    /* plain text */
   }
-  return PRODUCTION_MOBILE_DEMO;
+  return text || 'Could not create demo session';
+}
+
+function createClientSession(): SessionResponse {
+  const token =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID().replace(/-/g, '').slice(0, 22)
+      : `demo${Date.now().toString(36)}`;
+  return {
+    token,
+    url: mobileDemoUrlForSession(token),
+  };
 }
 
 export function MobileDemoQrPanel({ open, onClose }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const [demoUrl, setDemoUrl] = useState('');
+  const [sessionUrl, setSessionUrl] = useState('');
+  const [sessionToken, setSessionToken] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [offlineMode, setOfflineMode] = useState(false);
+
+  async function applySession(data: SessionResponse, isOffline = false) {
+    const url = resolveMobileDemoSessionUrl(data.token, data.url);
+    setSessionUrl(url);
+    setSessionToken(data.token);
+    setOfflineMode(isOffline);
+    const qr = await QRCode.toDataURL(url, { width: 220, margin: 2 });
+    setQrDataUrl(qr);
+  }
+
+  async function createSession() {
+    setLoading(true);
+    setError('');
+    setOfflineMode(false);
+    try {
+      const res = await fetch('/api/demo/sessions', { method: 'POST' });
+      if (res.ok) {
+        const data = (await res.json()) as SessionResponse;
+        await applySession(data, false);
+        return;
+      }
+
+      const body = await res.text();
+      if (res.status === 404 || res.status === 502 || res.status === 503) {
+        await applySession(createClientSession(), true);
+        setError(
+          'API session route unavailable. Showing a standalone demo link; restart the backend API to enable full demo sync.',
+        );
+        return;
+      }
+      throw new Error(parseApiError(body));
+    } catch (e) {
+      try {
+        await applySession(createClientSession(), true);
+        setError(
+          e instanceof Error
+            ? `${e.message}. Using a standalone demo link; restart the CiVX API if reports should sync to LGU.`
+            : 'Using a standalone demo link.',
+        );
+      } catch {
+        setError(e instanceof Error ? e.message : 'Could not create demo session');
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    if (!open) return;
-    const url = mobileDemoUrl();
-    setDemoUrl(url);
-    setLoading(true);
-    void QRCode.toDataURL(url, { width: 220, margin: 2 })
-      .then(setQrDataUrl)
-      .finally(() => setLoading(false));
+    if (open) void createSession();
   }, [open]);
 
   if (!open) return null;
 
-  // #region agent log
-  fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'fresh-session',location:'MobileDemoQrPanel.tsx:render',message:'QR panel render',data:{demoUrl,hasSessionParam:demoUrl.includes('session=')},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
-  // #endregion
+  const registerHref = sessionToken
+    ? `/register?session=${encodeURIComponent(sessionToken)}&next=${encodeURIComponent('/mobile/account')}`
+    : '/register';
+  const loginHref = sessionToken
+    ? `/login?session=${encodeURIComponent(sessionToken)}&next=${encodeURIComponent('/mobile/account')}`
+    : '/login';
 
   return (
     <div className="mobile-demo-qr-overlay" onClick={onClose} data-no-motion>
@@ -50,7 +110,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
         aria-labelledby="mobile-demo-qr-title"
         data-no-motion
       >
-        <div className="mobile-demo-header border-b border-hairline">
+        <div className="mobile-demo-qr-header">
           <div className="text-left">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">CiVX Mobile</p>
             <p id="mobile-demo-qr-title" className="text-sm font-semibold text-ink">
@@ -62,36 +122,55 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
           </button>
         </div>
 
-        <div className="space-y-4 p-5">
-          <p className="text-sm text-ink-muted-48">
-            Scan with your phone camera to open a fresh CiVX mobile demo.
+        <div className="mobile-demo-qr-body">
+          <p className="mobile-demo-qr-lead">
+            Scan with your phone camera to open the CiVX demo app on your mobile device.
           </p>
 
-          <div className="flex justify-center">
+          <div className="mobile-demo-qr-frame">
             {loading ? (
-              <div className="flex h-[220px] w-[220px] items-center justify-center rounded-2xl bg-canvas-parchment text-sm text-ink-muted-48">
-                Generating QR…
-              </div>
+              <div className="mobile-demo-qr-loading">Generating QR...</div>
             ) : qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR code for mobile demo" className="rounded-2xl border border-hairline" width={220} height={220} />
+              <img src={qrDataUrl} alt="QR code for mobile demo" className="mobile-demo-qr-image" width={220} height={220} />
             ) : null}
           </div>
 
-          {demoUrl ? (
-            <p className="break-all text-xs text-ink-muted-48">{demoUrl}</p>
+          {offlineMode ? (
+            <p className="text-xs text-amber-700">Standalone demo link (limited sync until API is restarted)</p>
           ) : null}
+          {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
-          {demoUrl ? (
-            <div className="flex flex-wrap justify-center gap-2">
+          {sessionUrl ? <p className="mobile-demo-qr-url">{sessionUrl}</p> : null}
+
+          <div className="mobile-demo-account-strip" data-no-motion>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="mobile-demo-account-title">Optional account link</p>
+              <p className="mobile-demo-account-copy">Save demo reports to a real profile when needed.</p>
+            </div>
+            <div className="mobile-demo-account-actions">
+              <Link to={registerHref} className="btn-primary text-sm" onClick={onClose}>
+                Create
+              </Link>
+              <Link to={loginHref} className="btn-secondary-pill text-sm" onClick={onClose}>
+                Sign in
+              </Link>
+            </div>
+          </div>
+
+          <div className="mobile-demo-qr-actions">
+            <button type="button" className="btn-primary text-sm" disabled={loading} onClick={() => void createSession()}>
+              Regenerate QR
+            </button>
+            {sessionUrl ? (
               <button
                 type="button"
                 className="btn-secondary-pill text-sm"
-                onClick={() => void navigator.clipboard.writeText(demoUrl)}
+                onClick={() => void navigator.clipboard.writeText(sessionUrl)}
               >
                 Copy link
               </button>
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
