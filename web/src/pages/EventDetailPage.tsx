@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { Footer } from '../components/ui/Footer';
 import { EventDetailHeader } from '../components/events/EventDetailHeader';
+import { EventAttendanceQrPanel } from '../components/events/EventAttendanceQrPanel';
 import { EventMapEmbed } from '../components/events/EventMapEmbed';
 import { EventVolunteerSidebar } from '../components/events/EventVolunteerSidebar';
 import { EventPhotoMasonry } from '../components/events/EventPhotoMasonry';
@@ -10,6 +11,13 @@ import { api } from '../lib/api';
 import { isLguPortalRole } from '../lib/auth';
 import { useAuth } from '../hooks/useAuth';
 import { useProfile } from '../hooks/useProfile';
+import {
+  canOrganizerEndEvent,
+  getEventAttendancePhase,
+  isEventEnded,
+  isEventStarted,
+  type AttendanceQrMode,
+} from '../shared/eventLifecycle';
 import type {
   EventParticipant,
   EventPhoto,
@@ -104,6 +112,19 @@ function EventSidebarTabs({
   );
 }
 
+function parseApiError(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    try {
+      const json = JSON.parse(err.message) as { detail?: string };
+      if (json.detail) return json.detail;
+    } catch {
+      /* plain text */
+    }
+    return err.message || fallback;
+  }
+  return fallback;
+}
+
 export default function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
@@ -121,6 +142,9 @@ export default function EventDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
+  const [showQr, setShowQr] = useState(false);
+  const [qrMode, setQrMode] = useState<AttendanceQrMode>('check-in');
+  const [ending, setEnding] = useState(false);
 
   const loginNext = eventId ? `/events/${eventId}` : '/events';
 
@@ -255,6 +279,104 @@ export default function EventDetailPage() {
 
   const startLabel = formatDateTime(event.scheduled_start);
   const endLabel = formatDateTime(event.scheduled_end);
+  const isOrganizer = profile?.id === event.organizer_user_id;
+  const attendancePhase = getEventAttendancePhase(event);
+  const eventEnded = isEventEnded(event.scheduled_end) || Boolean(event.checkout_qr_code_token);
+  const organizerCanEnd = canOrganizerEndEvent(event);
+
+  async function handleEndEvent() {
+    if (
+      !eventId ||
+      !window.confirm(
+        'End this event? Volunteers can no longer check in. A new checkout QR will be shown for volunteers to check out.',
+      )
+    ) {
+      return;
+    }
+    setEnding(true);
+    try {
+      await api<{
+        scheduled_end: string;
+        checkout_qr_code_token: string;
+      }>(`/api/cleanup-events/${eventId}/end`, {
+        method: 'POST',
+      });
+      const refreshed = await api<PublicEventDetail>(`/api/cleanup-events/${eventId}`);
+      setEvent(refreshed);
+      setQrMode('check-out');
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'attendance-qr-v2',location:'EventDetailPage.tsx:handleEndEvent',message:'event ended show checkout button',data:{eventId,attendancePhase:getEventAttendancePhase(refreshed),hasCheckoutToken:Boolean(refreshed.checkout_qr_code_token)},timestamp:Date.now(),hypothesisId:'H-checkout'})}).catch(()=>{});
+      // #endregion
+    } catch (err) {
+      window.alert(parseApiError(err, 'Unable to end event.'));
+    } finally {
+      setEnding(false);
+    }
+  }
+
+  function openCheckInQr() {
+    setQrMode('check-in');
+    setShowQr(true);
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'attendance-qr',location:'EventDetailPage.tsx:openCheckInQr',message:'check-in qr opened',data:{eventId,attendancePhase,eventStarted:isEventStarted(event.scheduled_start)},timestamp:Date.now(),hypothesisId:'H-checkin'})}).catch(()=>{});
+    // #endregion
+  }
+
+  async function openCheckOutQr() {
+    let checkoutToken = event.checkout_qr_code_token;
+    if (!checkoutToken && eventId) {
+      try {
+        const refreshed = await api<PublicEventDetail>(`/api/cleanup-events/${eventId}`);
+        setEvent(refreshed);
+        checkoutToken = refreshed.checkout_qr_code_token;
+      } catch {
+        /* keep current event */
+      }
+    }
+    setQrMode('check-out');
+    setShowQr(true);
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'attendance-qr-v2',location:'EventDetailPage.tsx:openCheckOutQr',message:'checkout qr opened',data:{eventId,attendancePhase,hasCheckoutToken:Boolean(checkoutToken)},timestamp:Date.now(),hypothesisId:'H-checkout'})}).catch(()=>{});
+    // #endregion
+  }
+
+  const bannerActions = isOrganizer ? (
+    <>
+      {attendancePhase === 'before_start' ? (
+        <span className="rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-ink-muted-80 shadow-sm">
+          Check-in QR opens {startLabel || 'at event start'}
+        </span>
+      ) : null}
+      {attendancePhase === 'checkin' ? (
+        <button
+          type="button"
+          className="rounded-full bg-white/95 px-4 py-2 text-sm font-semibold text-ink shadow-sm transition hover:bg-white"
+          onClick={openCheckInQr}
+        >
+          Show Check-in QR
+        </button>
+      ) : null}
+      {attendancePhase === 'checkout' ? (
+        <button
+          type="button"
+          className="rounded-full bg-white/95 px-4 py-2 text-sm font-semibold text-ink shadow-sm transition hover:bg-white"
+          onClick={() => void openCheckOutQr()}
+        >
+          Show Checkout QR
+        </button>
+      ) : null}
+      {organizerCanEnd ? (
+        <button
+          type="button"
+          className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
+          disabled={ending}
+          onClick={() => void handleEndEvent()}
+        >
+          {ending ? 'Ending…' : 'End Event'}
+        </button>
+      ) : null}
+    </>
+  ) : null;
 
   return (
     <div className="min-h-screen bg-canvas-parchment">
@@ -270,8 +392,18 @@ export default function EventDetailPage() {
             organizerName={event.organizer_name || 'Community organizer'}
             organizerLogoUrl={event.organizer_logo_url}
             bannerUrl={event.banner_url}
+            bannerActions={bannerActions}
           />
         </div>
+
+        <EventAttendanceQrPanel
+          eventId={event.id}
+          eventTitle={event.title}
+          mode={qrMode}
+          checkoutToken={event.checkout_qr_code_token}
+          open={showQr}
+          onClose={() => setShowQr(false)}
+        />
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(260px,3fr)] lg:items-start">
           <div className="min-w-0">
@@ -317,7 +449,7 @@ export default function EventDetailPage() {
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize ${approvalStatusClass(event.approval_status)}`}
                         >
-                          {formatApprovalStatus(event.approval_status)}
+                          {eventEnded ? 'Ended' : formatApprovalStatus(event.approval_status)}
                         </span>
                       </dd>
                     </div>

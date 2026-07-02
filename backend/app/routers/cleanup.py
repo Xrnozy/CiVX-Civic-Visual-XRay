@@ -1,16 +1,20 @@
 import uuid
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
 from app.db import get_supabase
-<<<<<<< HEAD
-from app.models.schemas import CleanupEventBannerUpdate, CleanupEventCreate, CleanupEventRejectBody
-=======
-from app.models.schemas import CleanupEventCreate, CleanupProofImagesUpdate
->>>>>>> origin/Gallery-Tab
+from app.models.schemas import (
+    CleanupEventBannerUpdate,
+    CleanupEventCreate,
+    CleanupEventRejectBody,
+    CleanupProofImagesUpdate,
+)
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
 from app.services import attendance as att
 from app.utils.audit import log_audit
+from app.utils.geocoding import enrich_event_barangay, resolve_barangay
 from app.utils.storage import resolve_photo_url
 
 router = APIRouter(prefix="/api/cleanup-events", tags=["cleanup"])
@@ -18,11 +22,38 @@ LGU = ("lgu_admin", "lgu_staff")
 GALLERY_UPLOAD_ROLES = ("lgu_admin", "lgu_staff", "field_worker")
 ORGANIZER_AND_LGU = ("organizer", "lgu_admin", "lgu_staff")
 
-
-<<<<<<< HEAD
 def _enrich_cleanup_event(row: dict) -> dict:
-    """Ensure rejected events expose rejection_reason when stored on the row or in audit logs."""
-    event = dict(row)
+    """Ensure rejected events expose rejection_reason; backfill barangay from map pin."""
+    try:
+        sb = get_supabase()
+        event = enrich_event_barangay(att.resolve_checkout_token(row), persist=True, sb=sb)
+    except Exception:
+        event = enrich_event_barangay(att.resolve_checkout_token(row), persist=False)
+    # #region agent log
+    import json, time
+    from pathlib import Path
+    if not (row.get("barangay") or "").strip() and (event.get("barangay") or "").strip():
+        _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+        try:
+            _log.open("a", encoding="utf-8").write(
+                json.dumps({
+                    "sessionId": "8b92e3",
+                    "runId": "barangay-fix",
+                    "location": "cleanup.py:_enrich_cleanup_event",
+                    "message": "barangay backfilled from coordinates",
+                    "data": {
+                        "event_id": event.get("id"),
+                        "barangay": event.get("barangay"),
+                        "latitude": event.get("latitude"),
+                        "longitude": event.get("longitude"),
+                    },
+                    "timestamp": int(time.time() * 1000),
+                    "hypothesisId": "H-barangay",
+                }) + "\n"
+            )
+        except Exception:
+            pass
+    # #endregion
     if event.get("approval_status") != "rejected":
         return event
 
@@ -51,7 +82,8 @@ def _enrich_cleanup_event(row: dict) -> dict:
     except Exception:
         pass
     return event
-=======
+
+
 def _has_proof(row: dict) -> bool:
     before = (row.get("before_photo_url") or "").strip()
     after = (row.get("after_photo_url") or "").strip()
@@ -69,7 +101,6 @@ def _gallery_entry(row: dict) -> dict:
         "before_image_url": resolve_photo_url(row.get("before_photo_url")),
         "after_image_url": resolve_photo_url(row.get("after_photo_url")),
     }
->>>>>>> origin/Gallery-Tab
 
 
 @router.get("")
@@ -91,8 +122,15 @@ def list_events(
 def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_roles(*ORGANIZER_AND_LGU))):
     sb = get_supabase()
     qr = str(uuid.uuid4())
+    body_data = body.model_dump()
+    resolved_barangay = resolve_barangay(
+        barangay=body_data.get("barangay") or None,
+        latitude=body_data["latitude"],
+        longitude=body_data["longitude"],
+    )
+    body_data["barangay"] = None if resolved_barangay == "Unknown" else resolved_barangay
     payload = {
-        **body.model_dump(),
+        **body_data,
         "organizer_user_id": user.id,
         "qr_code_token": qr,
     }
@@ -102,7 +140,20 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
     _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
     try:
         _log.open("a", encoding="utf-8").write(
-            json.dumps({"sessionId": "8b92e3", "location": "cleanup.py:create_event", "message": "insert cleanup event", "data": {"has_banner": bool(payload.get("banner_url"))}, "timestamp": int(time.time() * 1000), "hypothesisId": "H3", "runId": "banner-feature"}) + "\n"
+            json.dumps({
+                "sessionId": "8b92e3",
+                "location": "cleanup.py:create_event",
+                "message": "insert cleanup event",
+                "data": {
+                    "has_banner": bool(payload.get("banner_url")),
+                    "barangay": payload.get("barangay"),
+                    "latitude": payload.get("latitude"),
+                    "longitude": payload.get("longitude"),
+                },
+                "timestamp": int(time.time() * 1000),
+                "hypothesisId": "H-barangay",
+                "runId": "barangay-fix",
+            }) + "\n"
         )
     except Exception:
         pass
@@ -315,6 +366,73 @@ def reject_event(
         raise HTTPException(404, "Event not found")
     log_audit(user.id, "reject_cleanup", "cleanup_event", event_id, {"reason": reason})
     return _enrich_cleanup_event(updated[0])
+
+
+@router.post("/{event_id}/end")
+def end_event(event_id: str, user: AuthUser = Depends(require_roles("organizer"))):
+    event = att.get_event(event_id)
+    if event.get("organizer_user_id") != user.id:
+        raise HTTPException(403, "Not authorized for this event")
+    if event.get("approval_status") != "approved":
+        raise HTTPException(400, "Only approved events can be ended")
+    if event.get("checkout_qr_code_token"):
+        raise HTTPException(400, "Event has already ended")
+    scheduled_start = event.get("scheduled_start")
+    if scheduled_start:
+        start_dt = datetime.fromisoformat(scheduled_start.replace("Z", "+00:00"))
+        if start_dt > datetime.now(timezone.utc):
+            raise HTTPException(400, "Event cannot be ended before it starts")
+    now = datetime.now(timezone.utc).isoformat()
+    checkout_token = str(uuid.uuid4())
+    sb = get_supabase()
+    updated = None
+    try:
+        updated = (
+            sb.table("cleanup_events")
+            .update({"scheduled_end": now, "checkout_qr_code_token": checkout_token})
+            .eq("id", event_id)
+            .execute()
+            .data
+        )
+    except Exception:
+        updated = None
+    if not updated:
+        updated = (
+            sb.table("cleanup_events")
+            .update({"scheduled_end": now})
+            .eq("id", event_id)
+            .execute()
+            .data
+        )
+    if not updated:
+        raise HTTPException(404, "Event not found")
+    log_audit(
+        user.id,
+        "end_cleanup",
+        "cleanup_event",
+        event_id,
+        {"scheduled_end": now, "checkout_qr_code_token": checkout_token},
+    )
+    # #region agent log
+    import json, time
+    from pathlib import Path
+    _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+    try:
+        _log.open("a", encoding="utf-8").write(
+            json.dumps({
+                "sessionId": "8b92e3",
+                "runId": "attendance-qr",
+                "location": "cleanup.py:end_event",
+                "message": "event ended with checkout token",
+                "data": {"event_id": event_id, "has_checkout_token": True},
+                "timestamp": int(time.time() * 1000),
+                "hypothesisId": "H-checkout",
+            }) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
+    return {"ended": True, "scheduled_end": now, "checkout_qr_code_token": checkout_token}
 
 
 @router.get("/{event_id}/package")

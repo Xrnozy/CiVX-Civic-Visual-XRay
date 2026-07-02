@@ -165,6 +165,9 @@ export default function ReportPage() {
               <LocationPickerSection
                 latitude={latitude}
                 longitude={longitude}
+                barangay={barangay}
+                autoBarangay
+                onBarangayChange={setBarangay}
                 onChange={(lat, lng) => {
                   setLatitude(lat);
                   setLongitude(lng);
@@ -196,15 +199,7 @@ export default function ReportPage() {
                   />
                 </label>
 
-                <label className="mt-4 block">
-                  <span className="mb-2 block text-sm font-medium text-ink">Barangay</span>
-                  <input
-                    className={FORM_FIELD_INPUT}
-                    value={barangay}
-                    onChange={(e) => setBarangay(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </label>
+                <p className="mt-4 text-sm text-ink-muted-48">Barangay is detected from your map pin in the location section.</p>
               </section>
 
               <section className="rounded-[24px] border border-hairline bg-canvas-parchment p-5 md:p-6">

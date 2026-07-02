@@ -201,6 +201,11 @@ a {
   }
 }
 
+.sticky-below-chrome {
+  @apply lg:sticky lg:self-start;
+  top: calc(var(--nav-height) + var(--subnav-height) + 1.5rem);
+}
+
 .section-eyebrow {
   @apply text-xs font-semibold uppercase tracking-[0.2em] text-primary;
 }

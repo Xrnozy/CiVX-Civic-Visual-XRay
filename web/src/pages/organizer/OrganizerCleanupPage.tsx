@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
 import { ButtonPrimary } from '../../components/ui/Buttons';
 import { EventBannerUpload } from '../../components/events/EventBannerUpload';
@@ -11,12 +11,23 @@ import {
   OrganizerEventDetailCard,
   type OrganizerCleanupEvent,
 } from '../../components/organizer/OrganizerEventDetailCard';
+import {
+  getOrganizerDriveListBadge,
+  ORGANIZER_DRIVE_FILTERS,
+  ORGANIZER_EVENT_SORT_OPTIONS,
+  filterOrganizerCleanupEvents,
+  sortOrganizerCleanupEvents,
+  type OrganizerDriveFilter,
+  type OrganizerEventSort,
+} from '../../lib/eventSchedule';
 import { useProfile } from '../../hooks/useProfile';
 import { useOrganizerCleanup } from './OrganizerLayout';
+import { fetchBarangayFromCoordinates } from '../../lib/geocoding';
 import { formatDefaultMapCoordinates } from '../../shared/constants';
 
 interface CleanupEvent extends OrganizerCleanupEvent {
   max_volunteers: number;
+  created_at?: string;
 }
 
 const DEFAULT_COORDS = formatDefaultMapCoordinates();
@@ -49,6 +60,18 @@ export default function OrganizerCleanupPage() {
   const [form, setForm] = useState(EMPTY_FORM);
   const [bannerUrl, setBannerUrl] = useState('');
   const [bannerPreview, setBannerPreview] = useState('');
+  const [sortBy, setSortBy] = useState<OrganizerEventSort>('start');
+  const [statusFilter, setStatusFilter] = useState<OrganizerDriveFilter>('all');
+
+  const filteredEvents = useMemo(
+    () => filterOrganizerCleanupEvents(events, statusFilter),
+    [events, statusFilter],
+  );
+
+  const sortedEvents = useMemo(
+    () => sortOrganizerCleanupEvents(filteredEvents, sortBy),
+    [filteredEvents, sortBy],
+  );
 
   const load = useCallback(() => {
     api<CleanupEvent[]>('/api/cleanup-events?mine=true').then(setEvents).catch(() => setEvents([]));
@@ -60,10 +83,11 @@ export default function OrganizerCleanupPage() {
 
   useEffect(() => {
     setSelectedId((prev) => {
-      if (prev && events.some((ev) => ev.id === prev)) return prev;
-      return events[0]?.id ?? null;
+      const filtered = filterOrganizerCleanupEvents(events, statusFilter);
+      if (prev && filtered.some((ev) => ev.id === prev)) return prev;
+      return filtered[0]?.id ?? null;
     });
-  }, [events]);
+  }, [events, statusFilter]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -89,8 +113,17 @@ export default function OrganizerCleanupPage() {
     setFormError('');
     setCreating(true);
     try {
+      let barangay = form.barangay.trim();
+      if (!barangay) {
+        const resolved = await fetchBarangayFromCoordinates(
+          Number(form.latitude),
+          Number(form.longitude),
+        );
+        barangay = resolved?.trim() || '';
+      }
       const payload = {
         ...form,
+        barangay: barangay || undefined,
         latitude: Number(form.latitude),
         longitude: Number(form.longitude),
         ...(bannerUrl ? { banner_url: bannerUrl } : {}),
@@ -143,7 +176,7 @@ export default function OrganizerCleanupPage() {
           <form
             id="create-drive"
             onSubmit={createEvent}
-            className="store-utility-card mt-8 grid gap-8 bg-canvas p-6 lg:grid-cols-2 lg:p-8"
+            className="store-utility-card mt-8 grid gap-8 bg-canvas p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:p-8"
           >
             <div className="space-y-4">
               <div>
@@ -181,27 +214,16 @@ export default function OrganizerCleanupPage() {
                 />
               </label>
 
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-ink">Barangay</span>
-                  <input
-                    className={FORM_FIELD_INPUT}
-                    value={form.barangay}
-                    onChange={(e) => setForm({ ...form, barangay: e.target.value })}
-                    placeholder="Barangay name"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-2 block text-sm font-medium text-ink">Max volunteers</span>
-                  <input
-                    className={FORM_FIELD_INPUT}
-                    type="number"
-                    min={1}
-                    value={form.max_volunteers}
-                    onChange={(e) => setForm({ ...form, max_volunteers: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
+              <label className="block">
+                <span className="mb-2 block text-sm font-medium text-ink">Max volunteers</span>
+                <input
+                  className={FORM_FIELD_INPUT}
+                  type="number"
+                  min={1}
+                  value={form.max_volunteers}
+                  onChange={(e) => setForm({ ...form, max_volunteers: Number(e.target.value) })}
+                />
+              </label>
 
               <div className="grid gap-4 md:grid-cols-2">
                 <label className="block">
@@ -232,9 +254,12 @@ export default function OrganizerCleanupPage() {
                 embedded
                 latitude={form.latitude}
                 longitude={form.longitude}
-                onChange={(lat, lng) => setForm({ ...form, latitude: lat, longitude: lng })}
+                barangay={form.barangay}
+                autoBarangay
+                onBarangayChange={(barangay) => setForm((prev) => ({ ...prev, barangay }))}
+                onChange={(lat, lng) => setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
                 label="Cleanup location"
-                hint="Pin where volunteers should meet and where the drive is focused."
+                hint="Pin where volunteers should meet. Barangay is detected automatically from the pin."
               />
             </div>
 
@@ -247,23 +272,65 @@ export default function OrganizerCleanupPage() {
         )}
 
         <div className="mt-10">
-          <h2 className="text-lg font-semibold text-ink">My drives</h2>
-          <p className="mt-1 text-sm text-ink-muted-48">
-            {events.length} drive{events.length === 1 ? '' : 's'} · approved drives appear on the public map
-          </p>
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-ink">My drives</h2>
+              <p className="mt-1 text-sm text-ink-muted-48">
+                {filteredEvents.length} of {events.length} drive{events.length === 1 ? '' : 's'} · approved
+                drives appear on the public map
+              </p>
+            </div>
+            {events.length > 0 ? (
+              <label className="flex flex-col gap-1.5 text-sm">
+                <span className="font-medium text-ink-muted-80">Sort by</span>
+                <select
+                  className={`min-w-[180px] ${FORM_FIELD_INPUT}`}
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as OrganizerEventSort)}
+                >
+                  {ORGANIZER_EVENT_SORT_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
 
-          <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_460px]">
-            <div className="space-y-3">
-              {events.map((ev) => (
+          {events.length > 0 ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <div className="flex rounded-full border border-hairline p-1">
+                {ORGANIZER_DRIVE_FILTERS.map((filter) => (
+                  <button
+                    key={filter.id}
+                    type="button"
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                      statusFilter === filter.id ? 'bg-primary text-white' : 'text-ink-muted-80'
+                    }`}
+                    onClick={() => setStatusFilter(filter.id)}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,400px)] xl:grid-cols-[minmax(0,1fr)_440px]">
+            <div className="min-w-0 space-y-3">
+              {sortedEvents.map((ev) => {
+                const listBadge = getOrganizerDriveListBadge(ev);
+                return (
                 <button
                   key={ev.id}
                   type="button"
                   onClick={() => setSelectedId(ev.id)}
-                  className={`store-utility-card flex w-full flex-wrap items-center justify-between gap-4 bg-canvas text-left transition ${
+                  className={`store-utility-card flex w-full flex-wrap items-start justify-between gap-3 bg-canvas text-left transition ${
                     selectedId === ev.id ? 'border-primary ring-2 ring-primary/20' : ''
                   }`}
                 >
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">{ev.title}</p>
                     <p className="mt-1 text-sm text-ink-muted-48">
                       {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
@@ -274,20 +341,32 @@ export default function OrganizerCleanupPage() {
                       </p>
                     )}
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(ev.approval_status)}`}>
-                    {ev.approval_status.replace('_', ' ')}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    {listBadge ? (
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${listBadge.className}`}>
+                        {listBadge.label}
+                      </span>
+                    ) : null}
+                    <span className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${statusClass(ev.approval_status)}`}>
+                      {ev.approval_status.replace('_', ' ')}
+                    </span>
+                  </div>
                 </button>
-              ))}
-              {events.length === 0 && (
+              );
+              })}
+              {events.length === 0 ? (
                 <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
                   No cleanup drives yet. Use <strong className="text-ink">New cleanup drive</strong> above to plan your first one.
                 </div>
-              )}
+              ) : sortedEvents.length === 0 ? (
+                <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
+                  No drives match this filter.
+                </div>
+              ) : null}
             </div>
 
             {!selectedEvent ? (
-              <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48 lg:sticky lg:top-24 lg:self-start">
+              <div className="sticky-below-chrome store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
                 Select a drive to view details.
               </div>
             ) : (

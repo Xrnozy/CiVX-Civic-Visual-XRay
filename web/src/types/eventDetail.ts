@@ -6,6 +6,7 @@ export interface PublicEventDetail {
   scheduled_start: string;
   scheduled_end?: string;
   approval_status: string;
+  organizer_user_id?: string;
   latitude?: number;
   longitude?: number;
   going_count?: number;
@@ -13,7 +14,7 @@ export interface PublicEventDetail {
   organizer_logo_url?: string | null;
   organizer_profile_photo_url?: string | null;
   banner_url?: string | null;
-  rejection_reason?: string | null;
+  checkout_qr_code_token?: string | null;
 }
 
 export interface EventParticipant {

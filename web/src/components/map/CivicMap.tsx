@@ -147,6 +147,10 @@ export function CivicMap({
   const onLocationPickRef = useRef(onLocationPick);
   const suppressMapClickRef = useRef(false);
   const openInfoMarkerIdRef = useRef<string | null>(null);
+  const lastPinnedCoordsRef = useRef<string | null>(null);
+
+  const centerLat = center.lat;
+  const centerLng = center.lng;
 
   useEffect(() => {
     onMarkerSelectRef.current = onMarkerSelect;
@@ -389,13 +393,13 @@ export function CivicMap({
       cancelled = true;
       delete (window as Window & { gm_authFailure?: () => void }).gm_authFailure;
     };
-  }, [apiKey, lguMode, center, zoom, hideMapChrome]);
+  }, [apiKey, lguMode, hideMapChrome, centerLat, centerLng, zoom]);
 
   useEffect(() => {
     if (!map || selectedLocation) return;
     map.setCenter(center);
     map.setZoom(zoom);
-  }, [map, center, zoom, selectedLocation]);
+  }, [map, centerLat, centerLng, zoom, selectedLocation]);
 
   useEffect(() => {
     if (!map) return;
@@ -604,8 +608,17 @@ export function CivicMap({
           this.halo.setMap(nextMap);
         },
       };
-      map.panTo({ lat: selectedLocation.latitude, lng: selectedLocation.longitude });
-      map.setZoom(DEFAULT_MAP_PIN_ZOOM);
+      const pinKey = `${selectedLocation.latitude},${selectedLocation.longitude}`;
+      if (lastPinnedCoordsRef.current !== pinKey) {
+        lastPinnedCoordsRef.current = pinKey;
+        map.panTo({ lat: selectedLocation.latitude, lng: selectedLocation.longitude });
+        map.setZoom(DEFAULT_MAP_PIN_ZOOM);
+        // #region agent log
+        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'map-barangay-fix',location:'CivicMap.tsx:pinLocation',message:'map panned to pin',data:{pinKey},timestamp:Date.now(),hypothesisId:'H-map-pin'})}).catch(()=>{});
+        // #endregion
+      }
+    } else {
+      lastPinnedCoordsRef.current = null;
     }
 
     let clusterEndListener: { remove: () => void } | null = null;

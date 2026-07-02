@@ -1,7 +1,10 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CivicMap } from './CivicMap';
 import { ButtonPrimary } from '../ui/Buttons';
 import { DEFAULT_MAP_CENTER, DEFAULT_MAP_PIN_ZOOM, DEFAULT_MAP_ZOOM } from '../../shared/constants';
+import { fetchBarangayFromCoordinates } from '../../lib/geocoding';
+
+const NO_MAP_MARKERS: never[] = [];
 
 export const FORM_FIELD_INPUT =
   'w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink-muted-48 focus:border-primary focus:ring-2 focus:ring-primary/20';
@@ -13,6 +16,9 @@ interface LocationPickerSectionProps {
   label?: string;
   hint?: string;
   embedded?: boolean;
+  barangay?: string;
+  onBarangayChange?: (barangay: string) => void;
+  autoBarangay?: boolean;
 }
 
 export function LocationPickerSection({
@@ -22,13 +28,55 @@ export function LocationPickerSection({
   label = 'Location',
   hint = 'Click the map to pin a point, or use your current location.',
   embedded = false,
+  barangay = '',
+  onBarangayChange,
+  autoBarangay = false,
 }: LocationPickerSectionProps) {
+  const [geocodingBarangay, setGeocodingBarangay] = useState(false);
+  const geocodeRequestId = useRef(0);
+  const barangayTouchedRef = useRef(false);
+  const onBarangayChangeRef = useRef(onBarangayChange);
+  onBarangayChangeRef.current = onBarangayChange;
+
   const selectedLocation = useMemo(() => {
     const lat = Number(latitude);
     const lng = Number(longitude);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
     return { latitude: lat, longitude: lng };
   }, [latitude, longitude]);
+
+  useEffect(() => {
+    barangayTouchedRef.current = false;
+  }, [latitude, longitude]);
+
+  useEffect(() => {
+    if (!autoBarangay || !onBarangayChangeRef.current || !selectedLocation) return;
+
+    const requestId = ++geocodeRequestId.current;
+    setGeocodingBarangay(true);
+
+    const timer = window.setTimeout(() => {
+      void fetchBarangayFromCoordinates(selectedLocation.latitude, selectedLocation.longitude)
+        .then((resolved) => {
+          if (geocodeRequestId.current !== requestId) return;
+          if (!barangayTouchedRef.current && resolved) {
+            onBarangayChangeRef.current?.(resolved);
+          }
+        })
+        .catch(() => {
+          /* keep manual value */
+        })
+        .finally(() => {
+          if (geocodeRequestId.current === requestId) {
+            setGeocodingBarangay(false);
+          }
+        });
+    }, 400);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [autoBarangay, latitude, longitude]);
 
   function pinLocation(lat: number, lng: number) {
     onChange(lat.toFixed(6), lng.toFixed(6));
@@ -57,7 +105,7 @@ export function LocationPickerSection({
 
       <div className="map-shell mt-4 min-h-[280px]">
         <CivicMap
-          markers={[]}
+          markers={NO_MAP_MARKERS}
           center={mapCenter}
           zoom={mapZoom}
           selectedLocation={selectedLocation}
@@ -85,6 +133,28 @@ export function LocationPickerSection({
           />
         </label>
       </div>
+
+      {autoBarangay && onBarangayChange ? (
+        <label className="mt-4 block">
+          <span className="mb-2 block text-sm font-medium text-ink">Barangay</span>
+          <input
+            className={FORM_FIELD_INPUT}
+            value={barangay}
+            onChange={(e) => {
+              barangayTouchedRef.current = true;
+              onBarangayChange(e.target.value);
+            }}
+            placeholder={geocodingBarangay ? 'Detecting from map pin…' : 'Set a map pin to detect barangay'}
+          />
+          <p className="mt-1 text-xs text-ink-muted-48">
+            {geocodingBarangay
+              ? 'Looking up barangay from your pinned location…'
+              : barangay
+                ? 'Auto-detected from your pin. You can edit if needed.'
+                : 'Barangay is filled automatically when you pin the location.'}
+          </p>
+        </label>
+      ) : null}
 
       <div className="mt-4">
         <ButtonPrimary type="button" onClick={captureGeo}>

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   EVENT_BANNER_PLACEHOLDER,
   EVENT_CATEGORY_LABEL,
@@ -9,6 +10,7 @@ interface Props {
   organizerName: string;
   organizerLogoUrl?: string | null;
   bannerUrl?: string | null;
+  bannerActions?: ReactNode;
 }
 
 type CommunityLogo =
@@ -30,6 +32,7 @@ export function EventDetailHeader({
   organizerName,
   organizerLogoUrl,
   bannerUrl,
+  bannerActions,
 }: Props) {
   const bannerSrc = bannerUrl?.trim() || EVENT_BANNER_PLACEHOLDER;
   const avatar = resolveCommunityLogo(organizerLogoUrl, organizerName);
@@ -43,6 +46,11 @@ export function EventDetailHeader({
       <div className="relative h-48 sm:h-64 md:h-72">
         <img src={bannerSrc} alt="" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-black/10" />
+        {bannerActions ? (
+          <div className="absolute right-4 top-4 flex flex-wrap justify-end gap-2 sm:right-6 sm:top-6">
+            {bannerActions}
+          </div>
+        ) : null}
         <div className="absolute inset-x-0 bottom-0 flex items-end gap-4 p-5 sm:p-6">
           <div className="relative shrink-0">
             {avatar.kind === 'image' ? (

@@ -141,16 +141,16 @@ export function OrganizerEventDetailCard({
 
         <dl className="grid gap-3 text-sm">
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Category</dt>
-            <dd className="text-right font-medium text-ink">{EVENT_CATEGORY_LABEL}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Category</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{EVENT_CATEGORY_LABEL}</dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Organized by</dt>
-            <dd className="text-right font-medium text-ink">{organizerName}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Organized by</dt>
+            <dd className="min-w-0 truncate text-right font-medium text-ink">{organizerName}</dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Location</dt>
-            <dd className="text-right font-medium text-ink">{event.barangay || '—'}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Location</dt>
+            <dd className="min-w-0 truncate text-right font-medium text-ink">{event.barangay || '—'}</dd>
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2">
             <dt className="text-ink-muted-48">Status</dt>
@@ -170,12 +170,12 @@ export function OrganizerEventDetailCard({
             </dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Start</dt>
-            <dd className="text-right font-medium text-ink">{formatDateTime(event.scheduled_start)}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Start</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{formatDateTime(event.scheduled_start)}</dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-ink-muted-48">End</dt>
-            <dd className="text-right font-medium text-ink">{formatDateTime(event.scheduled_end)}</dd>
+            <dt className="shrink-0 text-ink-muted-48">End</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{formatDateTime(event.scheduled_end)}</dd>
           </div>
         </dl>
 

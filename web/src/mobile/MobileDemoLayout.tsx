@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { startFreshDemoSession } from './demoSession';
+
 import {
   mdiCalendar,
   mdiCalendarOutline,

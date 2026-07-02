@@ -17,7 +17,14 @@ _GOOGLE_BARANGAY_TYPES = (
     "neighborhood",
     "administrative_area_level_3",
 )
-_NOMINATIM_FIELDS = ("suburb", "city_district", "neighbourhood", "quarter", "village")
+_NOMINATIM_FIELDS = (
+    "quarter",
+    "suburb",
+    "neighbourhood",
+    "village",
+    "city_district",
+    "city",
+)
 
 
 def _normalize_barangay_label(raw: str | None) -> str | None:
@@ -129,3 +136,24 @@ def resolve_barangay(
         if geocoded:
             return geocoded
     return "Unknown"
+
+
+def enrich_event_barangay(event: dict, *, persist: bool = False, sb=None) -> dict:
+    """Fill missing cleanup-event barangay from coordinates; optionally persist to DB."""
+    event = dict(event)
+    if (event.get("barangay") or "").strip():
+        return event
+    lat, lng = event.get("latitude"), event.get("longitude")
+    if lat is None or lng is None:
+        return event
+    resolved = resolve_barangay(latitude=float(lat), longitude=float(lng))
+    if resolved == "Unknown":
+        return event
+    event["barangay"] = resolved
+    event_id = event.get("id")
+    if persist and event_id and sb is not None:
+        try:
+            sb.table("cleanup_events").update({"barangay": resolved}).eq("id", event_id).execute()
+        except Exception:
+            pass
+    return event

@@ -58,6 +58,21 @@ class AttendanceCheckIn(BaseModel):
     selfie_url: str | None = None
 
 
+class AttendanceWebCheckIn(BaseModel):
+    latitude: float
+    longitude: float
+
+
+class AttendanceWebCheckOut(BaseModel):
+    qr_code_id: str
+    latitude: float
+    longitude: float
+
+
+class AttendanceCheckOut(BaseModel):
+    qr_code_id: str | None = None
+
+
 class AttendanceRejectBody(BaseModel):
     reason: str | None = None
 

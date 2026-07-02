@@ -9,6 +9,7 @@ from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.agents.lgu_triage import LGUTriageAgent
 from app.config import settings
 from app.db import get_supabase
+from app.utils.geocoding import resolve_barangay
 
 
 class ReportIntakeAgent:
@@ -72,7 +73,12 @@ class ReportIntakeAgent:
         severity = detection.severity_score if detection else 1.5
         bbox = detection.bounding_box if detection else None
 
-        address_text = barangay.strip() if barangay and barangay.strip() else None
+        resolved_barangay = resolve_barangay(
+            barangay=barangay,
+            latitude=latitude,
+            longitude=longitude,
+        )
+        address_text = None if resolved_barangay == "Unknown" else resolved_barangay
 
         sb = get_supabase()
         report_row = sb.table("reports").insert({
@@ -97,7 +103,14 @@ class ReportIntakeAgent:
             incident_id = rec.incident_id
             merged = True
         else:
-            inc = self.intel.create_incident(final_issue, latitude, longitude, severity, "citizen")
+            inc = self.intel.create_incident(
+                final_issue,
+                latitude,
+                longitude,
+                severity,
+                "citizen",
+                barangay=address_text,
+            )
             incident_id = inc["id"]
             sb.table("reports").update({"merged_incident_id": incident_id}).eq("id", report_row["id"]).execute()
             merged = False

@@ -1,12 +1,23 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth.firebase import AuthUser, require_roles
 from app.db import get_supabase
 from app.utils.audit import normalize_submitter_type
+from app.utils.geocoding import resolve_barangay
 from app.utils.storage import resolve_photo_url
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
 LGU = ("lgu_admin", "lgu_staff", "field_worker")
+
+
+@router.get("/barangay")
+def barangay_from_coordinates(
+    latitude: float = Query(..., ge=-90, le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+):
+    """Reverse-geocode coordinates to a barangay label for cleanup/report forms."""
+    label = resolve_barangay(latitude=latitude, longitude=longitude)
+    return {"barangay": None if label == "Unknown" else label}
 
 
 @router.get("/markers")

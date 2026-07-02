@@ -47,7 +47,34 @@ def get_event(event_id: str) -> dict[str, Any]:
     result = sb.table("cleanup_events").select("*").eq("id", event_id).limit(1).execute()
     if not result.data:
         raise HTTPException(404, "Event not found")
-    return result.data[0]
+    return resolve_checkout_token(result.data[0])
+
+
+def resolve_checkout_token(event: dict[str, Any]) -> dict[str, Any]:
+    """Expose checkout QR token from the row or the latest end_cleanup audit entry."""
+    event = dict(event)
+    if event.get("checkout_qr_code_token"):
+        return event
+    try:
+        sb = get_supabase()
+        audits = (
+            sb.table("audit_logs")
+            .select("details")
+            .eq("action", "end_cleanup")
+            .eq("entity_id", event["id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if audits:
+            token = (audits[0].get("details") or {}).get("checkout_qr_code_token")
+            if token and str(token).strip():
+                event["checkout_qr_code_token"] = str(token).strip()
+    except Exception:
+        pass
+    return event
 
 
 def can_access_event(user: AuthUser, event: dict[str, Any]) -> bool:

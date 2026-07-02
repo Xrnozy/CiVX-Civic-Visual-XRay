@@ -8,6 +8,8 @@ import LoginPage from './pages/LoginPage';
 const MapPage = lazy(() => import('./pages/MapPage'));
 const EventsPage = lazy(() => import('./pages/EventsPage'));
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
+const EventCheckInPage = lazy(() => import('./pages/EventCheckInPage'));
+const EventCheckOutPage = lazy(() => import('./pages/EventCheckOutPage'));
 const LazyGalleryPage = lazy(() => import('./pages/GalleryPage'));
 const TransparencyPage = lazy(() => import('./pages/TransparencyPage'));
 const ReportPage = lazy(() => import('./pages/ReportPage'));
@@ -51,6 +53,8 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/map" element={<MapPage />} />
           <Route path="/events/:eventId" element={<EventDetailPage />} />
+          <Route path="/check-in/:eventId" element={<EventCheckInPage />} />
+          <Route path="/check-out/:eventId" element={<EventCheckOutPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/report" element={<ReportPage />} />
           <Route path="/analyzer" element={<AnalyzerTestPage />} />
