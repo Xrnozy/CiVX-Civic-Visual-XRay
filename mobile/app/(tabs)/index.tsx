@@ -44,7 +44,8 @@ export default function HomeScreen() {
     }, [loadImpact]),
   );
 
-  const formatStat = (value: number | undefined) => (value === undefined ? '-' : String(value));
+  const formatStat = (value: number | null | undefined) => (typeof value === 'number' ? String(value) : '-');
+  const formatPercent = (value: number | null | undefined) => (typeof value === 'number' ? `${value}%` : '-');
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
@@ -79,7 +80,7 @@ export default function HomeScreen() {
             <Text style={styles.statLabel}>Cleanups</Text>
           </View>
           <View style={styles.statPill}>
-            <Text style={styles.statValue}>{impact ? `${impact.verification_rate}%` : '-'}</Text>
+            <Text style={styles.statValue}>{formatPercent(impact?.verification_rate)}</Text>
             <Text style={styles.statLabel}>Verified</Text>
           </View>
         </View>

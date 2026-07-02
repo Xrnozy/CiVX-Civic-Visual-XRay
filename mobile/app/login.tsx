@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, Alert, ScrollView, ActivityIndicator, Platform, KeyboardAvoidingView } from 'react-native';
 import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithCredential, signInWithEmailAndPassword, signInWithPopup, updateProfile } from 'firebase/auth';
 import * as Google from 'expo-auth-session/providers/google';
 import * as WebBrowser from 'expo-web-browser';
@@ -76,8 +76,9 @@ function homeForRole(role: string) {
 }
 
 export default function LoginScreen() {
-  const params = useLocalSearchParams<{ invite?: string }>();
+  const params = useLocalSearchParams<{ invite?: string; next?: string }>();
   const inviteFromUrl = typeof params.invite === 'string' ? params.invite : '';
+  const nextPath = typeof params.next === 'string' && params.next.startsWith('/') ? params.next : '';
   const [mode, setMode] = useState<Mode>(inviteFromUrl ? 'register' : 'signin');
   const [accountType, setAccountType] = useState<AccountType | null>(inviteFromUrl ? 'street_sweeper' : null);
   const [inviteToken, setInviteToken] = useState(inviteFromUrl);
@@ -162,7 +163,7 @@ export default function LoginScreen() {
       Alert.alert('Complete registration', 'Finish your profile on the web app.');
       return;
     }
-    router.replace(homeForRole(me.role));
+    router.replace((nextPath || homeForRole(me.role)) as never);
   }
 
   async function submit() {
@@ -233,118 +234,131 @@ export default function LoginScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <View style={styles.card}>
-      <Text style={styles.eyebrow}>Account</Text>
-      <Text style={styles.title}>{mode === 'signin' ? 'Sign in' : 'Join CiVX'}</Text>
-      <Text style={styles.subtitleText}>Access the community map, report issues, and volunteer tools.</Text>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        style={styles.scroller}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        contentInsetAdjustmentBehavior="always"
+        automaticallyAdjustKeyboardInsets
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.card}>
+          <Text style={styles.eyebrow}>Account</Text>
+          <Text style={styles.title}>{mode === 'signin' ? 'Sign in' : 'Join CiVX'}</Text>
+          <Text style={styles.subtitleText}>Access the community map, report issues, and volunteer tools.</Text>
 
-      <View style={styles.tabs}>
-        <TouchableOpacity style={[styles.tab, mode === 'signin' && styles.tabActive]} onPress={() => setMode('signin')}>
-          <Text style={mode === 'signin' ? styles.tabTextActive : styles.tabText}>Sign in</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={[styles.tab, mode === 'register' && styles.tabActive]} onPress={() => setMode('register')}>
-          <Text style={mode === 'register' ? styles.tabTextActive : styles.tabText}>Register</Text>
-        </TouchableOpacity>
-      </View>
-
-      {hasGoogleButton && (
-        <>
-          <TouchableOpacity
-            style={styles.googleButton}
-            onPress={submitGoogle}
-            disabled={loading || (Platform.OS !== 'web' && !googleRequest)}
-          >
-            <Text style={styles.googleMark}>G</Text>
-            <Text style={styles.googleText}>Continue with Google</Text>
-          </TouchableOpacity>
-
-          <View style={styles.dividerRow}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>or use email</Text>
-            <View style={styles.divider} />
-          </View>
-        </>
-      )}
-
-      {mode === 'register' && !accountType && (
-        <View style={styles.section}>
-          {(['citizen', 'organizer'] as AccountType[]).map((type) => (
-            <TouchableOpacity key={type} style={styles.choice} onPress={() => setAccountType(type)}>
-              <Text style={styles.choiceTitle}>{ACCOUNT_LABELS[type]}</Text>
+          <View style={styles.tabs}>
+            <TouchableOpacity style={[styles.tab, mode === 'signin' && styles.tabActive]} onPress={() => setMode('signin')}>
+              <Text style={mode === 'signin' ? styles.tabTextActive : styles.tabText}>Sign in</Text>
             </TouchableOpacity>
-          ))}
-          <TouchableOpacity
-            style={styles.choice}
-            onPress={() => {
-              setWorkerFlowOpen(true);
-              setAccountType(null);
-            }}
-          >
-            <Text style={styles.choiceTitle}>{ACCOUNT_LABELS.street_sweeper}</Text>
-            <Text style={styles.choiceHint}>Requires an LGU invite QR or code</Text>
-          </TouchableOpacity>
-          {workerFlowOpen && (
+            <TouchableOpacity style={[styles.tab, mode === 'register' && styles.tabActive]} onPress={() => setMode('register')}>
+              <Text style={mode === 'register' ? styles.tabTextActive : styles.tabText}>Register</Text>
+            </TouchableOpacity>
+          </View>
+
+          {hasGoogleButton && (
             <>
-              <TextInput
-                style={styles.input}
-                placeholder="Worker invite code (from LGU QR)"
-                value={inviteToken}
-                onChangeText={setInviteToken}
-              />
               <TouchableOpacity
-                style={[styles.choice, !inviteToken && styles.choiceDisabled]}
-                onPress={() => inviteToken && setAccountType('street_sweeper')}
-                disabled={!inviteToken}
+                style={styles.googleButton}
+                onPress={submitGoogle}
+                disabled={loading || (Platform.OS !== 'web' && !googleRequest)}
               >
-                <Text style={styles.choiceTitle}>Continue as Public Worker</Text>
+                <Text style={styles.googleMark}>G</Text>
+                <Text style={styles.googleText}>Continue with Google</Text>
               </TouchableOpacity>
+
+              <View style={styles.dividerRow}>
+                <View style={styles.divider} />
+                <Text style={styles.dividerText}>or use email</Text>
+                <View style={styles.divider} />
+              </View>
             </>
           )}
-        </View>
-      )}
 
-      {mode === 'register' && accountType && (
-        <>
-          <Text style={styles.subtitle}>{ACCOUNT_LABELS[accountType]}</Text>
-          <TextInput style={styles.input} placeholder="Full name" value={fullName} onChangeText={setFullName} />
-          <TextInput style={styles.input} placeholder="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" />
-          <TextInput style={styles.input} placeholder="Barangay" value={barangay} onChangeText={setBarangay} />
-          {accountType === 'organizer' && (
-            <TextInput style={styles.input} placeholder="Organization name" value={organizationName} onChangeText={setOrganizationName} />
-          )}
-          {accountType === 'street_sweeper' && (
-            <TextInput style={styles.input} placeholder="Invite code" value={inviteToken} onChangeText={setInviteToken} />
-          )}
-          {accountType === 'street_sweeper' && (
+          {mode === 'register' && !accountType && (
             <View style={styles.section}>
-              <Text style={styles.fieldLabel}>Type of public worker</Text>
-              {(Object.entries(PUBLIC_WORKER_TYPES) as [PublicWorkerType, string][]).map(([key, label]) => (
-                <TouchableOpacity
-                  key={key}
-                  style={[styles.choice, publicWorkerType === key && styles.choiceActive]}
-                  onPress={() => setPublicWorkerType(key)}
-                >
-                  <Text style={styles.choiceTitle}>{label}</Text>
+              {(['citizen', 'organizer'] as AccountType[]).map((type) => (
+                <TouchableOpacity key={type} style={styles.choice} onPress={() => setAccountType(type)}>
+                  <Text style={styles.choiceTitle}>{ACCOUNT_LABELS[type]}</Text>
                 </TouchableOpacity>
               ))}
+              <TouchableOpacity
+                style={styles.choice}
+                onPress={() => {
+                  setWorkerFlowOpen(true);
+                  setAccountType(null);
+                }}
+              >
+                <Text style={styles.choiceTitle}>{ACCOUNT_LABELS.street_sweeper}</Text>
+                <Text style={styles.choiceHint}>Requires an LGU invite QR or code</Text>
+              </TouchableOpacity>
+              {workerFlowOpen && (
+                <>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Worker invite code (from LGU QR)"
+                    value={inviteToken}
+                    onChangeText={setInviteToken}
+                    returnKeyType="done"
+                  />
+                  <TouchableOpacity
+                    style={[styles.choice, !inviteToken && styles.choiceDisabled]}
+                    onPress={() => inviteToken && setAccountType('street_sweeper')}
+                    disabled={!inviteToken}
+                  >
+                    <Text style={styles.choiceTitle}>Continue as Public Worker</Text>
+                  </TouchableOpacity>
+                </>
+              )}
             </View>
           )}
-        </>
-      )}
 
-      <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" />
-      <TextInput style={styles.input} placeholder="Password (min. 6)" value={password} onChangeText={setPassword} secureTextEntry />
-      <TouchableOpacity style={[styles.btn, loading && styles.btnDisabled]} onPress={submit} disabled={loading}>
-        {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.btnText}>{mode === 'signin' ? 'Sign In' : 'Create Account'}</Text>}
-      </TouchableOpacity>
-      </View>
-    </ScrollView>
+          {mode === 'register' && accountType && (
+            <>
+              <Text style={styles.subtitle}>{ACCOUNT_LABELS[accountType]}</Text>
+              <TextInput style={styles.input} placeholder="Full name" value={fullName} onChangeText={setFullName} textContentType="name" returnKeyType="next" />
+              <TextInput style={styles.input} placeholder="Phone" value={phone} onChangeText={setPhone} keyboardType="phone-pad" textContentType="telephoneNumber" returnKeyType="next" />
+              <TextInput style={styles.input} placeholder="Barangay" value={barangay} onChangeText={setBarangay} returnKeyType="next" />
+              {accountType === 'organizer' && (
+                <TextInput style={styles.input} placeholder="Organization name" value={organizationName} onChangeText={setOrganizationName} returnKeyType="next" />
+              )}
+              {accountType === 'street_sweeper' && (
+                <TextInput style={styles.input} placeholder="Invite code" value={inviteToken} onChangeText={setInviteToken} returnKeyType="next" />
+              )}
+              {accountType === 'street_sweeper' && (
+                <View style={styles.section}>
+                  <Text style={styles.fieldLabel}>Type of public worker</Text>
+                  {(Object.entries(PUBLIC_WORKER_TYPES) as [PublicWorkerType, string][]).map(([key, label]) => (
+                    <TouchableOpacity
+                      key={key}
+                      style={[styles.choice, publicWorkerType === key && styles.choiceActive]}
+                      onPress={() => setPublicWorkerType(key)}
+                    >
+                      <Text style={styles.choiceTitle}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </>
+          )}
+
+          <TextInput style={styles.input} placeholder="Email" value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" textContentType="emailAddress" autoComplete="email" returnKeyType="next" />
+          <TextInput style={styles.input} placeholder="Password (min. 6)" value={password} onChangeText={setPassword} secureTextEntry textContentType={mode === 'signin' ? 'password' : 'newPassword'} autoComplete={mode === 'signin' ? 'password' : 'new-password'} returnKeyType="done" onSubmitEditing={submit} />
+          <TouchableOpacity style={[styles.btn, loading && styles.btnDisabled]} onPress={submit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#ffffff" /> : <Text style={styles.btnText}>{mode === 'signin' ? 'Sign In' : 'Create Account'}</Text>}
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, padding: 20, justifyContent: 'center', backgroundColor: colors.parchment },
+  screen: { flex: 1, backgroundColor: colors.parchment },
+  scroller: { flex: 1, backgroundColor: colors.parchment },
+  container: { flexGrow: 1, padding: 20, paddingBottom: 48, justifyContent: 'center', backgroundColor: colors.parchment },
   card: { backgroundColor: colors.canvas, borderRadius: radii.card, borderWidth: 1, borderColor: colors.hairline, padding: 24, ...productShadow },
   eyebrow: { ...type.eyebrow, color: colors.primary },
   title: { fontSize: 40, fontWeight: '600', color: colors.ink, marginTop: 4 },

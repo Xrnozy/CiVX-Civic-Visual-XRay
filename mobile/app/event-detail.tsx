@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { api } from '../lib/api';
 import { colors, productShadow, radii, type } from '../styles/theme';
 
@@ -76,7 +76,7 @@ export default function EventDetailScreen() {
 
   async function joinEvent() {
     if (!eventId || !profile) {
-      Alert.alert('Sign in required', 'Sign in before joining cleanup events.');
+      router.push({ pathname: '/login', params: { next: `/event-detail?id=${eventId}` } });
       return;
     }
     setJoining(true);

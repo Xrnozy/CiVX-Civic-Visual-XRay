@@ -221,18 +221,70 @@ export function CivicMap({
     return `${month} ${date.getDate()}`;
   }
 
-  /** Pan map so the selected marker + preview card sit near the center of the map pane. */
-  function focusMapOnMarker(gmaps: any, markerData: MarkerData) {
+  /** Pan/zoom toward the selected marker without overshooting. */
+  function focusMapOnMarker(markerData: MarkerData) {
     if (!map) return;
-    const position = { lat: markerData.latitude, lng: markerData.longitude };
     const zoom = map.getZoom();
     if (typeof zoom === 'number' && zoom < DEFAULT_MAP_PIN_ZOOM) {
       map.setZoom(DEFAULT_MAP_PIN_ZOOM);
     }
-    map.panTo(position);
-    // Preview card (~256px) sits above the pin; nudge map so the card reads centered.
-    gmaps.event.addListenerOnce(map, 'idle', () => {
-      map.panBy(0, 140);
+    map.panTo({ lat: markerData.latitude, lng: markerData.longitude });
+  }
+
+  /** Center the marker + preview card together inside the map viewport. */
+  function fitPreviewStackInView(gmaps: any, markerData: MarkerData, cardId: string) {
+    if (!map) return;
+    const mapEl = map.getDiv() as HTMLElement | undefined;
+    const card = document.getElementById(cardId);
+    if (!mapEl || !card) return;
+
+    const latLng = new gmaps.LatLng(markerData.latitude, markerData.longitude);
+    const overlay = new gmaps.OverlayView();
+    overlay.onAdd = () => {};
+    overlay.draw = () => {
+      const projection = overlay.getProjection();
+      if (!projection) return;
+
+      const mapRect = mapEl.getBoundingClientRect();
+      const cardRect = card.getBoundingClientRect();
+      const markerPx = projection.fromLatLngToContainerPixel(latLng);
+      if (!markerPx) return;
+
+      const markerPad = 24;
+      const relX = (client: number) => client - mapRect.left;
+      const relY = (client: number) => client - mapRect.top;
+
+      const minX = Math.min(relX(cardRect.left), markerPx.x - markerPad);
+      const maxX = Math.max(relX(cardRect.right), markerPx.x + markerPad);
+      const minY = Math.min(relY(cardRect.top), markerPx.y - markerPad);
+      const maxY = Math.max(relY(cardRect.bottom), markerPx.y + markerPad);
+
+      const topInset = 88;
+      const edgePad = 20;
+      const targetCenterX = mapRect.width / 2;
+      const targetCenterY = topInset + (mapRect.height - topInset - edgePad) / 2;
+
+      const stackCenterX = (minX + maxX) / 2;
+      const stackCenterY = (minY + maxY) / 2;
+
+      const panX = stackCenterX - targetCenterX;
+      const panY = stackCenterY - targetCenterY;
+
+      overlay.setMap(null);
+
+      if (Math.abs(panX) > 2 || Math.abs(panY) > 2) {
+        map.panBy(panX, panY);
+      }
+    };
+    overlay.setMap(map);
+  }
+
+  function runAfterPreviewLayout(gmaps: any, markerData: MarkerData, cardId: string) {
+    window.requestAnimationFrame(() => {
+      fitPreviewStackInView(gmaps, markerData, cardId);
+      gmaps.event.addListenerOnce(map, 'idle', () => {
+        fitPreviewStackInView(gmaps, markerData, cardId);
+      });
     });
   }
 
@@ -617,14 +669,17 @@ export function CivicMap({
       infoWindowRef.current = new gmaps.InfoWindow({
         headerDisabled: true,
         disableAutoPan: true,
-        pixelOffset: new gmaps.Size(0, -8),
+        pixelOffset: new gmaps.Size(0, 0),
       });
     } else {
       infoWindowRef.current.setOptions({
         disableAutoPan: true,
-        pixelOffset: new gmaps.Size(0, -8),
+        pixelOffset: new gmaps.Size(0, 0),
       });
     }
+
+    const sameMarker = openInfoMarkerIdRef.current === markerKey;
+    openInfoMarkerIdRef.current = markerKey;
 
     const bindPreviewCard = () => {
       const iwRoot = document.querySelector('.gm-style-iw') as HTMLElement | null;
@@ -664,22 +719,22 @@ export function CivicMap({
         }, 200);
         onPreviewExpandRef.current?.(markerKey);
       };
+      runAfterPreviewLayout(gmaps, markerData, cardId);
     };
 
-    const sameMarker = openInfoMarkerIdRef.current === markerKey;
-    openInfoMarkerIdRef.current = markerKey;
-
-    focusMapOnMarker(gmaps, markerData);
-
-    if (sameMarker && infoWindowRef.current?.getMap?.()) {
+    const openPreview = () => {
+      if (sameMarker && infoWindowRef.current?.getMap?.()) {
+        infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
+        window.requestAnimationFrame(bindPreviewCard);
+        return;
+      }
+      infoWindowRef.current.setContent(contentHtml);
       infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
-      window.requestAnimationFrame(bindPreviewCard);
-      return;
-    }
+      gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', bindPreviewCard);
+    };
 
-    infoWindowRef.current.setContent(contentHtml);
-    infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
-    gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', bindPreviewCard);
+    focusMapOnMarker(markerData);
+    gmaps.event.addListenerOnce(map, 'idle', openPreview);
   }, [map, displayMarkers, selectedMarkerId]);
 
   if (mapError) {

@@ -1,16 +1,22 @@
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, TextInput, Image, ActivityIndicator } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Alert, ScrollView, TextInput, Image, ActivityIndicator, Modal, Pressable, KeyboardAvoidingView, Platform } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as Location from 'expo-location';
+import { Ionicons } from '@expo/vector-icons';
 import { api } from '../lib/api';
 import { ISSUE_CATEGORIES } from '../shared/constants';
 import { colors, productShadow, radii, type } from '../styles/theme';
+
+function formatIssueType(issue: string) {
+  return issue.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+}
 
 export default function ReportScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [locationPermission, requestLocationPermission] = Location.useForegroundPermissions();
   const [photo, setPhoto] = useState<string | null>(null);
   const [issueType, setIssueType] = useState<string>('garbage_pile');
+  const [issuePickerOpen, setIssuePickerOpen] = useState(false);
   const [description, setDescription] = useState('');
   const [barangay, setBarangay] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -21,6 +27,10 @@ export default function ReportScreen() {
   const canUseLocation = Boolean(locationPermission?.granted);
 
   async function capture() {
+    if (photo) {
+      setPhoto(null);
+      return;
+    }
     const ref = cameraRef.current as unknown as { takePictureAsync?: () => Promise<{ uri: string }> } | null;
     if (!ref?.takePictureAsync) return;
     const pic = await ref.takePictureAsync();
@@ -98,66 +108,115 @@ export default function ReportScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.heroCard}>
-        <Text style={styles.eyebrow}>Citizen reporting</Text>
-        <Text style={styles.title}>Report an issue in a few taps.</Text>
-        <Text style={styles.subtitle}>Capture a photo, tag the problem, and help the city respond faster.</Text>
-      </View>
+    <KeyboardAvoidingView style={styles.screen} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <ScrollView
+        style={styles.scroller}
+        contentContainerStyle={styles.container}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        contentInsetAdjustmentBehavior="always"
+        automaticallyAdjustKeyboardInsets
+      >
+        <View style={styles.heroCard}>
+          <Text style={styles.eyebrow}>Citizen reporting</Text>
+          <Text style={styles.title}>Report an issue in a few taps.</Text>
+          <Text style={styles.subtitle}>Capture a photo, tag the problem, and help the city respond faster.</Text>
+        </View>
 
-      <View style={styles.cameraCard}>
-        <CameraView style={styles.camera} ref={cameraRef}>
-          <View style={styles.cameraOverlay}>
-            {photo ? <Image source={{ uri: photo }} style={styles.preview} /> : <Text style={styles.cameraHint}>Preview appears here after capture</Text>}
-            <TouchableOpacity style={styles.capture} onPress={capture}>
-              <Text style={styles.captureText}>{photo ? 'Retake' : 'Capture photo'}</Text>
-            </TouchableOpacity>
-          </View>
-        </CameraView>
-      </View>
+        <View style={styles.cameraCard}>
+          <CameraView style={styles.camera} ref={cameraRef}>
+            <View style={styles.cameraOverlay}>
+              {photo ? (
+                <View style={styles.previewWrap}>
+                  <Image source={{ uri: photo }} style={styles.preview} resizeMode="cover" />
+                </View>
+              ) : (
+                <Text style={styles.cameraHint}>Preview appears here after capture</Text>
+              )}
+              <TouchableOpacity style={styles.capture} onPress={capture}>
+                <Text style={styles.captureText}>{photo ? 'Retake' : 'Capture photo'}</Text>
+              </TouchableOpacity>
+            </View>
+          </CameraView>
+        </View>
 
-      <View style={styles.panel}>
-        <Text style={styles.sectionLabel}>Issue type</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipRow}>
-          {ISSUE_CATEGORIES.map((category) => (
-            <TouchableOpacity
-              key={category}
-              style={[styles.chip, issueType === category && styles.chipActive]}
-              onPress={() => setIssueType(category)}
-            >
-              <Text style={[styles.chipText, issueType === category && styles.chipTextActive]}>{category.replace(/_/g, ' ')}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.sectionLabel}>Details</Text>
-        <TextInput style={styles.input} placeholder="Short description" value={description} onChangeText={setDescription} multiline />
-        <TextInput style={styles.input} placeholder="Barangay or area (optional)" value={barangay} onChangeText={setBarangay} />
-
-        {!canUseLocation && (
-          <TouchableOpacity style={styles.permissionBtn} onPress={requestLocationPermission}>
-            <Text style={styles.permissionBtnText}>Grant location permission</Text>
+        <View style={styles.panel}>
+          <Text style={styles.sectionLabel}>Issue type</Text>
+          <TouchableOpacity
+            style={styles.select}
+            activeOpacity={0.8}
+            onPress={() => setIssuePickerOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel="Select issue type"
+          >
+            <Text style={styles.selectValue}>{formatIssueType(issueType)}</Text>
+            <Ionicons name="chevron-down" size={20} color={colors.muted} />
           </TouchableOpacity>
-        )}
 
-        {lastResult?.incident_id && (
-          <View style={styles.resultCard}>
-            <Text style={styles.resultLabel}>Last submitted incident</Text>
-            <Text style={styles.resultValue}>{lastResult.incident_id}</Text>
-            <Text style={styles.resultMeta}>{lastResult.merged ? 'Merged into an existing incident' : 'Created as a new incident'}</Text>
-          </View>
-        )}
+          <Text style={styles.sectionLabel}>Details</Text>
+          <TextInput style={styles.input} placeholder="Short description" value={description} onChangeText={setDescription} multiline />
+          <TextInput style={styles.input} placeholder="Barangay or area (optional)" value={barangay} onChangeText={setBarangay} />
 
-        <TouchableOpacity style={[styles.submit, submitting && styles.submitDisabled]} onPress={submit} disabled={submitting}>
-          {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Submit report</Text>}
-        </TouchableOpacity>
-      </View>
-    </ScrollView>
+          {!canUseLocation && (
+            <TouchableOpacity style={styles.permissionBtn} onPress={requestLocationPermission}>
+              <Text style={styles.permissionBtnText}>Grant location permission</Text>
+            </TouchableOpacity>
+          )}
+
+          {lastResult?.incident_id && (
+            <View style={styles.resultCard}>
+              <Text style={styles.resultLabel}>Last submitted incident</Text>
+              <Text style={styles.resultValue}>{lastResult.incident_id}</Text>
+              <Text style={styles.resultMeta}>{lastResult.merged ? 'Merged into an existing incident' : 'Created as a new incident'}</Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={[styles.submit, submitting && styles.submitDisabled]} onPress={submit} disabled={submitting}>
+            {submitting ? <ActivityIndicator color="#fff" /> : <Text style={styles.btnText}>Submit report</Text>}
+          </TouchableOpacity>
+        </View>
+
+        <Modal visible={issuePickerOpen} transparent animationType="fade" onRequestClose={() => setIssuePickerOpen(false)}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setIssuePickerOpen(false)}>
+            <Pressable style={styles.issueSheet}>
+              <View style={styles.sheetHeader}>
+                <Text style={styles.sheetTitle}>Issue type</Text>
+                <TouchableOpacity style={styles.closeButton} onPress={() => setIssuePickerOpen(false)} accessibilityRole="button" accessibilityLabel="Close issue type picker">
+                  <Ionicons name="close" size={20} color={colors.ink} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.issueList} showsVerticalScrollIndicator={false}>
+                {ISSUE_CATEGORIES.map((category) => {
+                  const selected = issueType === category;
+                  return (
+                    <TouchableOpacity
+                      key={category}
+                      style={[styles.issueOption, selected && styles.issueOptionActive]}
+                      activeOpacity={0.8}
+                      onPress={() => {
+                        setIssueType(category);
+                        setIssuePickerOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.issueOptionText, selected && styles.issueOptionTextActive]}>{formatIssueType(category)}</Text>
+                      {selected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 40, backgroundColor: colors.parchment },
+  screen: { flex: 1, backgroundColor: colors.parchment },
+  scroller: { flex: 1, backgroundColor: colors.parchment },
+  container: { padding: 20, paddingBottom: 56, backgroundColor: colors.parchment },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.parchment, padding: 24 },
   heroCard: { backgroundColor: colors.canvas, borderRadius: radii.card, padding: 22, borderWidth: 1, borderColor: colors.hairline, marginBottom: 14, ...productShadow },
   eyebrow: { ...type.eyebrow, color: colors.primary },
@@ -167,16 +226,14 @@ const styles = StyleSheet.create({
   camera: { aspectRatio: 4 / 3 },
   cameraOverlay: { flex: 1, justifyContent: 'space-between', padding: 16, backgroundColor: 'rgba(0,0,0,0.15)' },
   cameraHint: { color: '#fff', fontSize: 14, opacity: 0.9 },
-  preview: { width: '100%', height: '100%', position: 'absolute', left: 0, top: 0 },
+  previewWrap: { ...StyleSheet.absoluteFillObject, backgroundColor: colors.tileDark },
+  preview: { width: '100%', height: '100%' },
   capture: { alignSelf: 'center', backgroundColor: colors.primary, paddingVertical: 12, paddingHorizontal: 18, borderRadius: radii.pill },
   captureText: { color: '#fff', fontWeight: '600' },
   panel: { backgroundColor: colors.canvas, borderRadius: radii.card, padding: 18, borderWidth: 1, borderColor: colors.hairline },
   sectionLabel: { fontSize: 14, fontWeight: '700', color: colors.ink, marginTop: 4, marginBottom: 8 },
-  chipRow: { gap: 10, paddingBottom: 4 },
-  chip: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.pill, paddingVertical: 10, paddingHorizontal: 14, backgroundColor: colors.canvas, marginRight: 8 },
-  chipActive: { backgroundColor: colors.ink, borderColor: colors.ink },
-  chipText: { color: colors.ink, fontSize: 13 },
-  chipTextActive: { color: '#fff', fontWeight: '600' },
+  select: { minHeight: 54, borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.soft, paddingHorizontal: 14, marginBottom: 14, backgroundColor: colors.pearl, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectValue: { color: colors.ink, fontSize: 15, fontWeight: '600', flex: 1, marginRight: 12 },
   input: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.soft, padding: 14, minHeight: 56, textAlignVertical: 'top', marginBottom: 10, backgroundColor: colors.pearl, color: colors.ink },
   permissionCard: { backgroundColor: colors.canvas, borderRadius: radii.card, padding: 22, borderWidth: 1, borderColor: colors.hairline, alignItems: 'center', ...productShadow },
   permissionTitle: { fontSize: 20, fontWeight: '700', color: colors.ink },
@@ -190,4 +247,14 @@ const styles = StyleSheet.create({
   submit: { backgroundColor: colors.primary, padding: 16, alignItems: 'center', borderRadius: radii.pill, marginTop: 10 },
   submitDisabled: { opacity: 0.7 },
   btnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.38)', justifyContent: 'flex-end', padding: 16 },
+  issueSheet: { maxHeight: '78%', backgroundColor: colors.canvas, borderRadius: radii.card, borderWidth: 1, borderColor: colors.hairline, overflow: 'hidden', ...productShadow },
+  sheetHeader: { minHeight: 58, paddingLeft: 18, paddingRight: 10, borderBottomWidth: 1, borderBottomColor: colors.divider, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  sheetTitle: { fontSize: 17, fontWeight: '700', color: colors.ink },
+  closeButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
+  issueList: { paddingVertical: 6 },
+  issueOption: { minHeight: 50, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  issueOptionActive: { backgroundColor: colors.pearl },
+  issueOptionText: { color: colors.ink80, fontSize: 15, flex: 1, marginRight: 12 },
+  issueOptionTextActive: { color: colors.ink, fontWeight: '700' },
 });

@@ -11,11 +11,13 @@ import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo
 import * as Location from 'expo-location';
 import { Accelerometer } from 'expo-sensors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import CameraPreview from '../../components/camera/CameraPreview';
 import CameraSourcePicker from '../../components/camera/CameraSourcePicker';
 import { useVideoInputs } from '../../hooks/useVideoInputs';
 import { api } from '../../lib/api';
+import { getFirebaseAuth } from '../../lib/firebase';
 import type { CameraPreviewHandle } from '../../types/camera';
 import type { VideoInput } from '../../types/camera';
 import { colors, radii } from '../../styles/theme';
@@ -93,6 +95,24 @@ export default function CameraScreen() {
       const response = await requestLocationPermission();
       if (!response.granted) throw new Error('Location permission is required.');
     }
+  }
+
+  async function hasSignedInUser() {
+    const storedToken = await AsyncStorage.getItem('civx_token');
+    if (storedToken) return true;
+    try {
+      return Boolean(getFirebaseAuth().currentUser);
+    } catch {
+      return false;
+    }
+  }
+
+  function redirectToSignIn() {
+    router.push({ pathname: '/login', params: { next: '/(tabs)/camera' } });
+  }
+
+  function isAuthRequiredError(error: unknown) {
+    return error instanceof Error && /sign in required|missing auth token|invalid token/i.test(error.message);
   }
 
   function cleanupPassiveRecording(shouldEndSession: boolean) {
@@ -278,6 +298,10 @@ export default function CameraScreen() {
       void capturePassiveChunk();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to start passive recording.';
+      if (isAuthRequiredError(error)) {
+        redirectToSignIn();
+        return;
+      }
       Alert.alert('Recording unavailable', message);
       cleanupPassiveRecording(false);
     } finally {
@@ -332,6 +356,10 @@ export default function CameraScreen() {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to start driver mode.';
+      if (isAuthRequiredError(error)) {
+        redirectToSignIn();
+        return;
+      }
       Alert.alert('Driver mode unavailable', message);
       cleanupDriverMonitoring(false);
     } finally {
@@ -362,6 +390,11 @@ export default function CameraScreen() {
 
   async function handleActionPress() {
     if (busy) return;
+
+    if (!(await hasSignedInUser())) {
+      redirectToSignIn();
+      return;
+    }
 
     if (!cameraPermission?.granted || !microphonePermission?.granted || !locationPermission?.granted) {
       try {
