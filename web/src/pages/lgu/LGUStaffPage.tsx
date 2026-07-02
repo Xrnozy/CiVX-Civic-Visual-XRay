@@ -23,7 +23,9 @@ function RoleBadge({ role }: { role: string }) {
         ? 'staff-role-badge staff-role-badge-staff'
         : role === 'field_worker'
           ? 'staff-role-badge staff-role-badge-field'
-          : 'staff-role-badge staff-role-badge-other';
+          : role === 'field_checker'
+            ? 'staff-role-badge staff-role-badge-checker'
+            : 'staff-role-badge staff-role-badge-other';
   return <span className={className}>{label}</span>;
 }
 

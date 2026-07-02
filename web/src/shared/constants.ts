@@ -31,7 +31,20 @@ export const INCIDENT_STATUSES = [
   'archived',
 ] as const;
 
-export const DEFAULT_MAP_CENTER = { lat: 14.5995, lng: 120.9842 };
+/** Geographic center of Metro Manila (NCR) — Ortigas / Mandaluyong area */
+export const DEFAULT_MAP_CENTER = { lat: 14.55, lng: 121.03 };
+export const DEFAULT_MAP_ZOOM = 11;
+export const DEFAULT_MAP_PIN_ZOOM = 13;
+
+/** Real-world radius (meters) to collapse nearby map pins into one marker */
+export const MAP_MARKER_MERGE_RADIUS_M = 1;
+
+export function formatDefaultMapCoordinates() {
+  return {
+    latitude: DEFAULT_MAP_CENTER.lat.toFixed(6),
+    longitude: DEFAULT_MAP_CENTER.lng.toFixed(6),
+  };
+}
 
 export const ECOQUEST_TASK_TYPES = [
   'clean_sidewalk',

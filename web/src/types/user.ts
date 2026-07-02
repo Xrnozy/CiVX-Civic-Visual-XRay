@@ -8,6 +8,8 @@ export interface UserProfile {
   phone_number?: string;
   barangay?: string;
   organization_name?: string;
+  organization_logo_url?: string | null;
+  profile_photo_url?: string | null;
   role: string;
   registration_completed?: boolean;
   registration_completed_at?: string | null;
@@ -75,5 +77,6 @@ export const LGU_ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
   lgu_admin: 'LGU admin',
   lgu_staff: 'LGU staff',
   field_worker: 'Field worker',
+  field_checker: 'Field checker (dispatch)',
   citizen: 'Community member (remove LGU access)',
 };

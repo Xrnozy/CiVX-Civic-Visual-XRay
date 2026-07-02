@@ -5,13 +5,24 @@ import { StatCard } from '../components/ui/StatCard';
 import { usePolling } from '../hooks/useDashboardSocket';
 
 const features = [
-  { title: 'Report with GPS', desc: 'Citizens photograph issues with automatic location tagging and AI-assisted classification.' },
-  { title: 'Duplicate merging', desc: 'Nearby reports of the same issue merge into one incident so LGUs avoid redundant work.' },
-  { title: 'Community response', desc: 'Cleanup events, volunteer attendance, and EcoQuest tasks connect problems to solutions.' },
+  {
+    title: 'Report with GPS',
+    desc: 'Citizens photograph issues with automatic location tagging and AI-assisted classification.',
+  },
+  {
+    title: 'Duplicate merging',
+    desc: 'Nearby reports of the same issue merge into one incident so LGUs avoid redundant work.',
+  },
+  {
+    title: 'Community response',
+    desc: 'Cleanup events, volunteer attendance, and EcoQuest tasks connect problems to solutions.',
+  },
 ];
 
 export default function HomePage() {
-  const impact = usePolling<{ resolved_incidents: number; approved_cleanups: number }>('/api/analytics/community-impact');
+  const impact = usePolling<{ resolved_incidents: number; approved_cleanups: number }>(
+    '/api/analytics/community-impact',
+  );
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -25,17 +36,20 @@ export default function HomePage() {
         ctaSecondary={{ label: 'Join Events', to: '/events' }}
         showVisual
       />
-      <section className="bg-canvas-parchment px-6 py-20">
-        <div className="mx-auto max-w-[1440px]">
-          <p className="text-center text-xs font-semibold uppercase tracking-widest text-primary">Impact</p>
-          <h2 className="mt-2 text-center text-[34px] font-semibold tracking-tight text-ink">Community at a glance</h2>
-          <div className="mt-10 grid gap-6 md:grid-cols-3">
+
+      <section className="section-band-parchment">
+        <div className="section-inner">
+          <p className="section-eyebrow text-center">Impact</p>
+          <h2 className="section-title text-center">Community at a glance</h2>
+          <p className="section-lead">Live signals from reports, cleanups, and verified resolutions across the city.</p>
+          <div className="mt-12 grid gap-6 md:grid-cols-3">
             <StatCard label="Issues resolved" value={impact?.resolved_incidents ?? '—'} />
             <StatCard label="Cleanups approved" value={impact?.approved_cleanups ?? '—'} />
             <StatCard label="Active citizens" value="Open" />
           </div>
         </div>
       </section>
+
       <ProductTile
         variant="dark"
         eyebrow="AI + Operations"
@@ -44,12 +58,12 @@ export default function HomePage() {
         ctaPrimary={{ label: 'Report an Issue', to: '/report' }}
         ctaSecondary={{ label: 'LGU Dashboard', to: '/lgu' }}
       />
-      <section className="bg-canvas px-6 py-20">
-        <div className="mx-auto max-w-[1440px]">
-          <h2 className="text-center text-[34px] font-semibold tracking-tight text-ink">How CiVX works</h2>
-          <p className="mx-auto mt-4 max-w-2xl text-center text-[21px] text-ink-muted-80">
-            From citizen report to LGU resolution — one coordinated platform.
-          </p>
+
+      <section className="section-band-canvas">
+        <div className="section-inner">
+          <p className="section-eyebrow text-center">Platform</p>
+          <h2 className="section-title text-center">How CiVX works</h2>
+          <p className="section-lead">From citizen report to LGU resolution — one coordinated platform.</p>
           <div className="feature-grid mt-12">
             {features.map((f, i) => (
               <div key={f.title} className="feature-item">
@@ -61,6 +75,7 @@ export default function HomePage() {
           </div>
         </div>
       </section>
+
       <ProductTile
         variant="parchment"
         title="Ready to make a difference?"

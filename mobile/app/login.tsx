@@ -89,6 +89,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [workerFlowOpen, setWorkerFlowOpen] = useState(Boolean(inviteFromUrl));
   const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest(GOOGLE_CLIENT_IDS);
   const hasGoogleButton =
     Platform.OS === 'web'
@@ -136,16 +137,25 @@ export default function LoginScreen() {
     await AsyncStorage.setItem('civx_token', token);
     const me = await api<{ registration_completed?: boolean; role: string }>('/api/users/me');
     if (!me.registration_completed && isRegister && accountType) {
-      const profile = await completeRegistration({
-        account_type: accountType,
-        full_name: fullName,
-        phone_number: phone,
-        barangay,
-        organization_name: accountType === 'organizer' ? organizationName : undefined,
-        invite_token: accountType === 'street_sweeper' ? inviteToken : undefined,
-        public_worker_type: accountType === 'street_sweeper' ? publicWorkerType || undefined : undefined,
-      });
-      router.replace(homeForRole(profile.role));
+      try {
+        const profile = await completeRegistration({
+          account_type: accountType,
+          full_name: fullName,
+          phone_number: phone,
+          barangay,
+          organization_name: accountType === 'organizer' ? organizationName : undefined,
+          invite_token: accountType === 'street_sweeper' ? inviteToken : undefined,
+          public_worker_type: accountType === 'street_sweeper' ? publicWorkerType || undefined : undefined,
+        });
+        router.replace(homeForRole(profile.role));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : '';
+        if (msg.includes('already completed')) {
+          router.replace(homeForRole(me.role));
+          return;
+        }
+        throw err;
+      }
       return;
     }
     if (!me.registration_completed) {
@@ -264,19 +274,33 @@ export default function LoginScreen() {
               <Text style={styles.choiceTitle}>{ACCOUNT_LABELS[type]}</Text>
             </TouchableOpacity>
           ))}
-          <TextInput
-            style={styles.input}
-            placeholder="Worker invite code (from LGU QR)"
-            value={inviteToken}
-            onChangeText={setInviteToken}
-          />
           <TouchableOpacity
             style={styles.choice}
-            onPress={() => inviteToken && setAccountType('street_sweeper')}
-            disabled={!inviteToken}
+            onPress={() => {
+              setWorkerFlowOpen(true);
+              setAccountType(null);
+            }}
           >
             <Text style={styles.choiceTitle}>{ACCOUNT_LABELS.street_sweeper}</Text>
+            <Text style={styles.choiceHint}>Requires an LGU invite QR or code</Text>
           </TouchableOpacity>
+          {workerFlowOpen && (
+            <>
+              <TextInput
+                style={styles.input}
+                placeholder="Worker invite code (from LGU QR)"
+                value={inviteToken}
+                onChangeText={setInviteToken}
+              />
+              <TouchableOpacity
+                style={[styles.choice, !inviteToken && styles.choiceDisabled]}
+                onPress={() => inviteToken && setAccountType('street_sweeper')}
+                disabled={!inviteToken}
+              >
+                <Text style={styles.choiceTitle}>Continue as Public Worker</Text>
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
@@ -341,6 +365,8 @@ const styles = StyleSheet.create({
   choice: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.card, padding: 16, marginBottom: 10, backgroundColor: colors.canvas },
   choiceActive: { borderColor: colors.primary, backgroundColor: '#f0f7ff' },
   choiceTitle: { fontWeight: '600', color: colors.ink },
+  choiceHint: { marginTop: 4, fontSize: 13, color: colors.muted },
+  choiceDisabled: { opacity: 0.5 },
   fieldLabel: { fontSize: 14, fontWeight: '600', marginBottom: 8, color: colors.ink },
   input: { borderWidth: 1, borderColor: colors.hairline, borderRadius: radii.pill, padding: 16, marginBottom: 12, backgroundColor: colors.canvas, color: colors.ink },
   btn: { backgroundColor: colors.primary, borderRadius: radii.pill, padding: 16, alignItems: 'center', marginTop: 8, minHeight: 52 },

@@ -30,6 +30,18 @@ const OrganizerCleanupPage = lazy(() => import('./pages/organizer/OrganizerClean
 const WorkerLayout = lazy(() => import('./pages/worker/WorkerLayout').then((m) => ({ default: m.WorkerLayout })));
 const WorkerDashboard = lazy(() => import('./pages/worker/WorkerDashboard'));
 const WorkerShiftsPage = lazy(() => import('./pages/worker/WorkerShiftsPage'));
+const MobileDemoLayout = lazy(() => import('./mobile/MobileDemoLayout').then((m) => ({ default: m.MobileDemoLayout })));
+const MobileHome = lazy(() => import('./mobile/screens/MobileHome'));
+const MobileMap = lazy(() => import('./mobile/screens/MobileMap'));
+const MobileEvents = lazy(() => import('./mobile/screens/MobileEvents'));
+const MobileCamera = lazy(() => import('./mobile/screens/MobileCamera'));
+const MobileEcoQuest = lazy(() => import('./mobile/screens/MobileEcoQuest'));
+const MobileReport = lazy(() => import('./mobile/screens/MobileReport'));
+const MobileAccount = lazy(() => import('./mobile/screens/MobileAccount'));
+const DispatchLayout = lazy(() => import('./pages/dispatch/DispatchLayout').then((m) => ({ default: m.DispatchLayout })));
+const DispatchDashboard = lazy(() => import('./pages/dispatch/DispatchDashboard'));
+const DispatchCasePage = lazy(() => import('./pages/dispatch/DispatchCasePage'));
+const DispatchMapPage = lazy(() => import('./pages/dispatch/DispatchMapPage'));
 
 export default function App() {
   return (
@@ -49,6 +61,20 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/register/complete" element={<CompleteRegistrationPage />} />
           <Route path="/street-sweeper/welcome" element={<StreetSweeperWelcomePage />} />
+          <Route path="/mobile" element={<MobileDemoLayout />}>
+            <Route index element={<MobileHome />} />
+            <Route path="map" element={<MobileMap />} />
+            <Route path="events" element={<MobileEvents />} />
+            <Route path="camera" element={<MobileCamera />} />
+            <Route path="ecoquest" element={<MobileEcoQuest />} />
+            <Route path="report" element={<MobileReport />} />
+            <Route path="account" element={<MobileAccount />} />
+          </Route>
+          <Route path="/dispatch" element={<DispatchLayout />}>
+            <Route index element={<DispatchDashboard />} />
+            <Route path="map" element={<DispatchMapPage />} />
+            <Route path="cases/:assignmentId" element={<DispatchCasePage />} />
+          </Route>
           <Route path="/lgu" element={<LGULayout />}>
             <Route index element={<LGUDashboard />} />
             <Route path="queue" element={<LGUQueuePage />} />

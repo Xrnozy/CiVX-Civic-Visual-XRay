@@ -11,6 +11,7 @@ USER_ROLE_LABELS = {
     "lgu_admin": "LGU admin",
     "lgu_staff": "LGU staff",
     "field_worker": "Field worker",
+    "field_checker": "Field checker",
     "driver": "Driver",
     "street_sweeper": "Public worker",
 }

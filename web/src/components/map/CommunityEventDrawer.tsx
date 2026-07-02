@@ -29,7 +29,7 @@ export function CommunityEventDrawer({
       <aside
         className={
           overlay
-            ? 'flex h-full w-full flex-col items-center justify-center rounded-r-[20px] border border-l-0 border-hairline bg-canvas shadow-2xl'
+            ? 'flex h-full w-full flex-col items-center justify-center rounded-[20px] border border-hairline bg-canvas shadow-2xl'
             : 'flex min-h-[320px] flex-col items-center justify-center rounded-[20px] border border-hairline bg-canvas'
         }
       >
@@ -44,7 +44,7 @@ export function CommunityEventDrawer({
     <aside
       className={
         overlay
-          ? 'flex h-full w-full flex-col overflow-hidden rounded-r-[20px] border border-l-0 border-hairline bg-canvas shadow-2xl'
+          ? 'flex h-full w-full flex-col overflow-hidden rounded-[20px] border border-hairline bg-canvas shadow-2xl'
           : 'flex max-h-[min(85vh,720px)] flex-col overflow-hidden rounded-[20px] border border-hairline bg-canvas'
       }
     >

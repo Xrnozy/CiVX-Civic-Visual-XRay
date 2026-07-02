@@ -31,7 +31,7 @@ def process_message(
 
 def match_gps(trace: list, timestamp: float, fallback_lat: float | None, fallback_lng: float | None) -> tuple[float, float]:
     if not trace:
-        return fallback_lat or 14.5995, fallback_lng or 120.9842
+        return fallback_lat or 14.55, fallback_lng or 121.03
     best = trace[0]
     best_diff = abs(trace[0].get("t", 0) - timestamp)
     for pt in trace:
@@ -39,4 +39,4 @@ def match_gps(trace: list, timestamp: float, fallback_lat: float | None, fallbac
         if diff < best_diff:
             best_diff = diff
             best = pt
-    return best.get("lat", fallback_lat or 14.5995), best.get("lng", fallback_lng or 120.9842)
+    return best.get("lat", fallback_lat or 14.55), best.get("lng", fallback_lng or 121.03)

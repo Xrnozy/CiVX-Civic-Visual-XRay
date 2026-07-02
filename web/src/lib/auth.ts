@@ -20,6 +20,8 @@ export function redirectPathForRole(role: string): string {
       return '/organizer';
     case 'street_sweeper':
       return '/worker';
+    case 'field_checker':
+      return '/dispatch';
     case 'lgu_admin':
     case 'lgu_staff':
     case 'field_worker':
@@ -42,6 +44,8 @@ export interface CompleteRegistrationPayload {
   phone_number: string;
   barangay: string;
   organization_name?: string;
+  organization_logo_url?: string;
+  profile_photo_url?: string;
   invite_token?: string;
   public_worker_type?: string;
 }

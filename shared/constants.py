@@ -40,6 +40,7 @@ USER_ROLES = [
     "lgu_admin",
     "lgu_staff",
     "field_worker",
+    "field_checker",
     "driver",
     "street_sweeper",
 ]
@@ -62,7 +63,9 @@ ISSUE_URGENCY = {
     "scattered_trash": 3,
 }
 
-DEFAULT_MAP_CENTER = {"lat": 14.5995, "lng": 120.9842}  # Manila demo
+DEFAULT_MAP_CENTER = {"lat": 14.55, "lng": 121.03}  # Metro Manila (NCR)
+DEFAULT_MAP_ZOOM = 11
+DEFAULT_MAP_PIN_ZOOM = 13
 
 ECOQUEST_TASK_TYPES = [
     "clean_sidewalk",

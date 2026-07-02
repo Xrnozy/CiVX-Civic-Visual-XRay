@@ -7,10 +7,10 @@ import {
   CommunityIncidentReport,
 } from '../components/map/CommunityIncidentDrawer';
 import { CommunityEventDrawer } from '../components/map/CommunityEventDrawer';
-import { Footer } from '../components/ui/Footer';
 import { ButtonPrimary } from '../components/ui/Buttons';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { ImageGalleryOverlay } from '../components/ui/ImageGalleryOverlay';
+import { SlideInPanel } from '../components/motion/SlideInPanel';
 import { SubNavFrosted } from '../components/ui/SubNavFrosted';
 import type { OrganizerCleanupEvent } from '../components/organizer/OrganizerEventDetailCard';
 import { StatusBadge } from '../components/lgu/attendance/StatusBadge';
@@ -65,11 +65,15 @@ const VOLUNTEER_STATUS_LABELS: Record<AttendanceStatus, string> = {
   rejected: 'Registration rejected',
 };
 
+type MapLayer = 'issues' | 'events' | 'both';
+
 export default function MapPage() {
   const navigate = useNavigate();
   const { user, ready: authReady } = useAuth();
   const { profile, ready: profileReady } = useProfile();
-  const [markers, setMarkers] = useState<CommunityMapMarker[]>([]);
+  const [incidentMarkers, setIncidentMarkers] = useState<CommunityMapMarker[]>([]);
+  const [eventMarkers, setEventMarkers] = useState<CommunityMapMarker[]>([]);
+  const [mapLayer, setMapLayer] = useState<MapLayer>('issues');
   const [issueType, setIssueType] = useState('');
   const [status, setStatus] = useState('');
   const [selectedMarker, setSelectedMarker] = useState<CommunityMapMarker | null>(null);
@@ -99,13 +103,23 @@ export default function MapPage() {
       }>;
     }>(`/api/maps/markers?${params}`)
       .then((d) => {
-        setMarkers([
-          ...d.incidents.map((i) => ({ ...i, type: 'incident' as const })),
-          ...(d.cleanup_events ?? []).map((e) => ({ ...e, type: 'cleanup' as const })),
-        ]);
+        setIncidentMarkers(d.incidents.map((i) => ({ ...i, type: 'incident' as const })));
+        setEventMarkers(
+          (d.cleanup_events ?? []).map((e) => ({ ...e, type: 'cleanup' as const })),
+        );
       })
-      .catch(() => setMarkers([]));
+      .catch(() => {
+        setIncidentMarkers([]);
+        setEventMarkers([]);
+      });
   }, [issueType, status]);
+
+  const markers =
+    mapLayer === 'issues'
+      ? incidentMarkers
+      : mapLayer === 'events'
+        ? eventMarkers
+        : [...incidentMarkers, ...eventMarkers];
 
   useEffect(() => {
     const marker = selectedMarker;
@@ -289,7 +303,7 @@ export default function MapPage() {
   }
 
   return (
-    <div className="min-h-screen bg-canvas">
+    <div className="flex h-dvh flex-col overflow-hidden bg-canvas">
       <GlobalNav />
       <SubNavFrosted
         title="Community Map"
@@ -300,31 +314,65 @@ export default function MapPage() {
           </Link>
         }
       />
-      <div className="page-content">
-        <div className="mb-6 flex flex-wrap items-center gap-4">
-          <select className="filter-select" value={issueType} onChange={(e) => setIssueType(e.target.value)}>
-            <option value="">All issue types</option>
-            {ISSUE_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {c.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-          <select className="filter-select" value={status} onChange={(e) => setStatus(e.target.value)}>
-            <option value="">All statuses</option>
-            {INCIDENT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s.replace(/_/g, ' ')}
-              </option>
-            ))}
-          </select>
-          <span className="text-sm text-ink-muted-48">{markers.length} markers</span>
-        </div>
+      <div className="page-content-map">
+        <div className="map-shell-immersive relative flex min-h-0 flex-1 flex-col">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-wrap items-center gap-2 p-4">
+            <div className="map-layer-toggle pointer-events-auto shadow-product">
+              {(['issues', 'events', 'both'] as const).map((layer) => (
+                <button
+                  key={layer}
+                  type="button"
+                  className={`map-layer-btn ${mapLayer === layer ? 'map-layer-btn-active' : ''}`}
+                  onClick={() => setMapLayer(layer)}
+                >
+                  {layer === 'issues' ? 'Issues' : layer === 'events' ? 'Events' : 'Both'}
+                </button>
+              ))}
+            </div>
+            {(mapLayer === 'issues' || mapLayer === 'both') && (
+              <>
+                <select
+                  className="filter-select pointer-events-auto shadow-product"
+                  value={issueType}
+                  onChange={(e) => setIssueType(e.target.value)}
+                >
+                  <option value="">All issue types</option>
+                  {ISSUE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>
+                      {c.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="filter-select pointer-events-auto shadow-product"
+                  value={status}
+                  onChange={(e) => setStatus(e.target.value)}
+                >
+                  <option value="">All statuses</option>
+                  {INCIDENT_STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s.replace(/_/g, ' ')}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <span className="pointer-events-auto rounded-full bg-canvas/90 px-3 py-1.5 text-xs text-ink-muted-48 shadow-product backdrop-blur">
+              {mapLayer === 'issues'
+                ? `${incidentMarkers.length} issues`
+                : mapLayer === 'events'
+                  ? `${eventMarkers.length} events`
+                  : `${incidentMarkers.length} issues · ${eventMarkers.length} events`}
+            </span>
+          </div>
 
-        <div className="map-shell relative">
-          <div className="min-h-[70vh]">
+          <div className="min-h-0 flex-1">
             <CivicMap
               markers={markers}
+              zoom={12}
+              heightClass="h-full"
+              hideMapChrome
+              flush
               selectedMarkerId={selectedMarker?.id ?? null}
               onMarkerSelect={(marker) => {
                 setSelectedMarker(marker);
@@ -338,6 +386,8 @@ export default function MapPage() {
                 if (marker) {
                   setSelectedMarker(marker);
                   setExpanded(true);
+                  setJoinError('');
+                  setGallery(null);
                 }
               }}
             />
@@ -360,24 +410,18 @@ export default function MapPage() {
                 type="button"
                 aria-label="Close incident details"
                 className="absolute inset-0 z-20 bg-black/40"
-                onClick={() => {
-                  setExpanded(false);
-                  setGallery(null);
-                }}
+                onClick={closePreview}
               />
-              <div className="absolute inset-y-0 left-0 z-30 flex h-full w-full max-w-[min(100%,420px)] sm:w-[min(42%,480px)] sm:min-w-[320px]">
+              <SlideInPanel className="map-drawer-panel">
                 <CommunityIncidentDrawer
                   incident={drawerIncident}
                   reports={drawerReports}
                   loading={loadingIncidentDetails}
-                  onClose={() => {
-                    setExpanded(false);
-                    setGallery(null);
-                  }}
+                  onClose={closePreview}
                   onOpenGallery={(images, index) => setGallery({ images, index })}
                   overlay
                 />
-              </div>
+              </SlideInPanel>
             </>
           ) : null}
 
@@ -387,24 +431,23 @@ export default function MapPage() {
                 type="button"
                 aria-label="Close cleanup event details"
                 className="absolute inset-0 z-20 bg-black/40"
-                onClick={() => setExpanded(false)}
+                onClick={closePreview}
               />
-              <div className="absolute inset-y-0 left-0 z-30 flex h-full w-full max-w-[min(100%,420px)] sm:w-[min(42%,480px)] sm:min-w-[320px]">
+              <SlideInPanel className="map-drawer-panel">
                 <CommunityEventDrawer
                   event={drawerEvent}
                   organizerName={drawerEvent?.organizer_name || 'Community organizer'}
                   goingCount={drawerEvent?.going_count ?? 0}
                   loading={loadingEventDetails}
-                  onClose={() => setExpanded(false)}
+                  onClose={closePreview}
                   overlay
                   volunteerFooter={volunteerFooter()}
                 />
-              </div>
+              </SlideInPanel>
             </>
           ) : null}
         </div>
       </div>
-      <Footer />
     </div>
   );
 }

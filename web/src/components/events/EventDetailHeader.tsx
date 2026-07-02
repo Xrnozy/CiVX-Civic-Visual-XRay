@@ -8,6 +8,7 @@ interface Props {
   title: string;
   organizerName: string;
   organizerPhotoUrl?: string | null;
+  bannerUrl?: string | null;
 }
 
 function organizerInitials(name: string) {
@@ -19,13 +20,14 @@ function organizerInitials(name: string) {
     .join('');
 }
 
-export function EventDetailHeader({ title, organizerName, organizerPhotoUrl }: Props) {
+export function EventDetailHeader({ title, organizerName, organizerPhotoUrl, bannerUrl }: Props) {
   const avatarSrc = organizerPhotoUrl?.trim() || ORGANIZER_AVATAR_PLACEHOLDER;
+  const bannerSrc = bannerUrl?.trim() || EVENT_BANNER_PLACEHOLDER;
 
   return (
     <header className="overflow-hidden rounded-[24px] border border-hairline bg-canvas shadow-sm">
       <div className="relative h-48 sm:h-64 md:h-72">
-        <img src={EVENT_BANNER_PLACEHOLDER} alt="" className="h-full w-full object-cover" />
+        <img src={bannerSrc} alt="" className="h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-black/10" />
         <div className="absolute inset-x-0 bottom-0 flex items-end gap-4 p-5 sm:p-6">
           <div className="relative shrink-0">

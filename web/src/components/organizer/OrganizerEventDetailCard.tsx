@@ -11,6 +11,7 @@ export interface OrganizerCleanupEvent {
   approval_status: string;
   latitude?: number;
   longitude?: number;
+  banner_url?: string | null;
 }
 
 interface Props {
@@ -26,6 +27,10 @@ const EVENT_CATEGORY_LABEL = 'Cleanup drive';
 
 const BANNER_PLACEHOLDER =
   'https://images.unsplash.com/photo-1532996122720-e3c354a0b15b?auto=format&fit=crop&w=920&q=80';
+
+function eventBannerSrc(event: OrganizerCleanupEvent) {
+  return event.banner_url?.trim() || BANNER_PLACEHOLDER;
+}
 
 function approvalStatusClass(status: string) {
   if (status === 'approved') return 'bg-emerald-100 text-emerald-800';
@@ -72,7 +77,7 @@ export function OrganizerEventDetailCard({
     >
       <div className="relative h-44 overflow-hidden bg-primary/10">
         <img
-          src={BANNER_PLACEHOLDER}
+          src={eventBannerSrc(event)}
           alt=""
           className="h-full w-full object-cover"
         />

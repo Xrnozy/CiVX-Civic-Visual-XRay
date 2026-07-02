@@ -5,13 +5,16 @@ import { isRegistrationComplete, redirectPathForRole } from '../../lib/auth';
 
 const COMPLETE_PATH = '/register/complete';
 const AUTH_PATHS = ['/login', '/register', COMPLETE_PATH];
+const DEMO_PATHS = ['/mobile'];
 
 export function RegistrationGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const { user, ready: authReady } = useAuth();
   const { profile, ready: profileReady } = useProfile();
 
-  if (!authReady || (user && !profileReady)) {
+  const isDemoPath = DEMO_PATHS.some((p) => location.pathname.startsWith(p));
+
+  if (!authReady || (user && !profileReady && !isDemoPath)) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center text-sm text-ink-muted-48">
         Loading…
@@ -20,6 +23,8 @@ export function RegistrationGate({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return <>{children}</>;
+
+  if (isDemoPath) return <>{children}</>;
 
   const onAuthPath = AUTH_PATHS.some((p) => location.pathname.startsWith(p));
   const needsRegistration = profile && !isRegistrationComplete(profile);

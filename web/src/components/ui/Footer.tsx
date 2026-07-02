@@ -3,10 +3,10 @@ import { Link } from 'react-router-dom';
 export function Footer() {
   return (
     <footer className="border-t border-hairline bg-canvas-parchment">
-      <div className="mx-auto grid max-w-[980px] gap-10 px-6 py-16 text-ink-muted-80 md:grid-cols-4">
+      <div className="mx-auto grid max-w-[980px] gap-12 px-6 py-20 text-ink-muted-80 md:grid-cols-4">
         <div>
-          <p className="text-sm font-semibold text-ink">CiVX</p>
-          <p className="mt-3 text-sm leading-[2.41]">
+          <p className="text-[17px] font-semibold text-ink">CiVX</p>
+          <p className="mt-4 text-[17px] leading-[1.47] text-ink-muted-80">
             Civic Visual X-Ray — AI-powered civic intelligence for smarter, cleaner communities.
           </p>
         </div>

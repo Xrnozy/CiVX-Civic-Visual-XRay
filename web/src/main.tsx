@@ -13,10 +13,12 @@ function Bootstrap() {
     const stopSync = startAuthTokenSync();
     completeGoogleRedirectIfNeeded().then((profile) => {
       if (!profile) return;
+      const pending = sessionStorage.getItem('civx_pending_registration');
       if (!isRegistrationComplete(profile)) {
         navigate('/register/complete', { replace: true });
         return;
       }
+      if (pending) sessionStorage.removeItem('civx_pending_registration');
       navigate(redirectPathForRole(profile.role), { replace: true });
     });
     return stopSync;

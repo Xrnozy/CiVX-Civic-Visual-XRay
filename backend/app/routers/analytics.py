@@ -93,9 +93,11 @@ def community_impact():
     try:
         sb = get_supabase()
         resolved = sb.table("incidents").select("*", count="exact", head=True).eq("status", "resolved").execute()
+        active = sb.table("incidents").select("*", count="exact", head=True).in_("status", ["verified", "assigned", "ongoing"]).execute()
         cleanups = sb.table("cleanup_events").select("*", count="exact", head=True).eq("approval_status", "approved").execute()
         return {
             "resolved_incidents": resolved.count or 0,
+            "active_incidents": active.count or 0,
             "approved_cleanups": cleanups.count or 0,
         }
     except Exception:

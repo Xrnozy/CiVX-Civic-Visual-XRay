@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
 from app.db import get_supabase
-from app.models.schemas import CleanupEventCreate
+from app.models.schemas import CleanupEventBannerUpdate, CleanupEventCreate
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
 from app.services import attendance as att
 from app.utils.audit import log_audit
@@ -32,11 +32,23 @@ def list_events(
 def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_roles(*ORGANIZER_AND_LGU))):
     sb = get_supabase()
     qr = str(uuid.uuid4())
-    row = sb.table("cleanup_events").insert({
+    payload = {
         **body.model_dump(),
         "organizer_user_id": user.id,
         "qr_code_token": qr,
-    }).execute().data[0]
+    }
+    # #region agent log
+    import json, time
+    from pathlib import Path
+    _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+    try:
+        _log.open("a", encoding="utf-8").write(
+            json.dumps({"sessionId": "8b92e3", "location": "cleanup.py:create_event", "message": "insert cleanup event", "data": {"has_banner": bool(payload.get("banner_url"))}, "timestamp": int(time.time() * 1000), "hypothesisId": "H3", "runId": "banner-feature"}) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
+    row = sb.table("cleanup_events").insert(payload).execute().data[0]
     agent = CleanupCoordinationAgent()
     agent.match_event_to_incident(row["id"])
     return row
@@ -52,6 +64,43 @@ def get_event(event_id: str):
         "organizer_name": att.fetch_organizer_display_name(organizer_id),
         "organizer_profile_photo_url": att.fetch_organizer_profile_photo(organizer_id),
     }
+
+
+@router.patch("/{event_id}/banner")
+def update_event_banner(
+    event_id: str,
+    body: CleanupEventBannerUpdate,
+    user: AuthUser = Depends(require_roles(*ORGANIZER_AND_LGU)),
+):
+    event = att.get_event(event_id)
+    if user.role == "organizer" and event.get("organizer_user_id") != user.id:
+        raise HTTPException(403, "Not authorized for this event")
+    banner_url = body.banner_url.strip()
+    if not banner_url:
+        raise HTTPException(400, "banner_url is required")
+    sb = get_supabase()
+    updated = (
+        sb.table("cleanup_events")
+        .update({"banner_url": banner_url})
+        .eq("id", event_id)
+        .execute()
+        .data
+    )
+    if not updated:
+        raise HTTPException(404, "Event not found")
+    # #region agent log
+    import json, time
+    from pathlib import Path
+    _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+    try:
+        _log.open("a", encoding="utf-8").write(
+            json.dumps({"sessionId": "8b92e3", "location": "cleanup.py:update_event_banner", "message": "banner updated", "data": {"event_id": event_id}, "timestamp": int(time.time() * 1000), "hypothesisId": "H2", "runId": "banner-feature"}) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
+    log_audit(user.id, "update_cleanup_banner", "cleanup_event", event_id, {})
+    return updated[0]
 
 
 @router.get("/{event_id}/participants")

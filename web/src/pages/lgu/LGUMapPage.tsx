@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CivicMap } from '../../components/map/CivicMap';
+import { DEFAULT_MAP_ZOOM } from '../../shared/constants';
 import { api } from '../../lib/api';
 
 export default function LGUMapPage() {
@@ -23,7 +24,7 @@ export default function LGUMapPage() {
   return (
     <div className="p-6">
       <h1 className="mb-4 text-[34px] font-semibold">LGU Operational Map</h1>
-      <CivicMap markers={markers} lguMode center={center} zoom={center ? 16 : 13} />
+      <CivicMap markers={markers} lguMode center={center} zoom={center ? 16 : DEFAULT_MAP_ZOOM} />
     </div>
   );
 }

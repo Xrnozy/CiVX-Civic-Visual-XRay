@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { ButtonPrimary, ButtonSecondaryPill } from '../ui/Buttons';
+import { ButtonPrimary } from '../ui/Buttons';
 import { api } from '../../lib/api';
 import type { EventPhoto } from '../../types/eventDetail';
 
@@ -130,24 +130,29 @@ export function EventPhotoMasonry({
                 </span>
               ) : null}
               {canModerate ? (
-                <div className="absolute inset-x-0 bottom-0 flex gap-1 bg-gradient-to-t from-black/70 to-transparent p-2 opacity-0 transition group-hover:opacity-100">
-                  {!photo.hidden ? (
-                    <ButtonSecondaryPill
-                      className="!px-2 !py-1 text-xs"
+                <>
+                  <div className="event-photo-vignette" aria-hidden />
+                  <div className="event-photo-actions">
+                    {!photo.hidden ? (
+                      <button
+                        type="button"
+                        className="event-photo-action-btn event-photo-action-hide"
+                        disabled={actionId === photo.id}
+                        onClick={() => void hidePhoto(photo.id)}
+                      >
+                        Hide
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="event-photo-action-btn event-photo-action-delete"
                       disabled={actionId === photo.id}
-                      onClick={() => void hidePhoto(photo.id)}
+                      onClick={() => void deletePhoto(photo.id)}
                     >
-                      Hide
-                    </ButtonSecondaryPill>
-                  ) : null}
-                  <ButtonSecondaryPill
-                    className="!px-2 !py-1 text-xs"
-                    disabled={actionId === photo.id}
-                    onClick={() => void deletePhoto(photo.id)}
-                  >
-                    Delete
-                  </ButtonSecondaryPill>
-                </div>
+                      Delete
+                    </button>
+                  </div>
+                </>
               ) : null}
             </figure>
           ))}

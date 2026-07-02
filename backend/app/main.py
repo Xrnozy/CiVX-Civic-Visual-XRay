@@ -9,11 +9,8 @@ from app.config import settings
 from app.routers import (
     health, users, reports, incidents, cleanup, volunteers,
     attendance, ecoquest, passive, driver, maps, analytics, media, ws,
-<<<<<<< HEAD
-    departments, registration_invites, analyzer, passive_pipeline,
-=======
-    departments, registration_invites, analyzer, event_photos,
->>>>>>> origin/Event-FullDetails-Page
+    departments, registration_invites, analyzer, passive_pipeline, event_photos,
+    demo, dispatch,
 )
 from app.services.redis_queue import ensure_consumer_groups
 
@@ -65,4 +62,6 @@ app.include_router(maps.router)
 app.include_router(analytics.router)
 app.include_router(media.router)
 app.include_router(analyzer.router)
+app.include_router(demo.router)
+app.include_router(dispatch.router)
 app.include_router(ws.router)

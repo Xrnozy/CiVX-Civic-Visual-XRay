@@ -8,6 +8,8 @@ from app.utils.geocoding import resolve_barangay
 from app.utils.storage import resolve_photo_url, resolve_photo_urls
 from app.agents.lgu_triage import LGUTriageAgent
 
+from app.utils.dispatch_routing import recommend_department
+
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
 LGU = ("lgu_admin", "lgu_staff", "field_worker")
 
@@ -154,10 +156,125 @@ def reject_incident(incident_id: str, user: AuthUser = Depends(require_roles(*LG
     return {"status": "archived"}
 
 
+@router.get("/{incident_id}/dispatch-recommendation")
+def dispatch_recommendation(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+    sb = get_supabase()
+    incident = sb.table("incidents").select("primary_issue_type").eq("id", incident_id).single().execute().data
+    return recommend_department(incident.get("primary_issue_type"))
+
+
+@router.get("/{incident_id}/dispatch-status")
+def incident_dispatch_status(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+    sb = get_supabase()
+    assignment = (
+        sb.table("dispatch_assignments")
+        .select("*")
+        .eq("incident_id", incident_id)
+        .order("assigned_at", desc=True)
+        .limit(1)
+        .execute()
+        .data
+    )
+    activity = []
+    row = assignment[0] if assignment else None
+    if row:
+        activity = (
+            sb.table("dispatch_activity_log")
+            .select("*")
+            .eq("dispatch_assignment_id", row["id"])
+            .order("created_at")
+            .execute()
+            .data
+            or []
+        )
+        if row.get("checker_user_id"):
+            checker = (
+                sb.table("users")
+                .select("id, full_name, email")
+                .eq("id", row["checker_user_id"])
+                .maybe_single()
+                .execute()
+                .data
+            )
+            row = {**row, "checker": checker}
+    return {"assignment": row, "activity": activity}
+
+
+@router.post("/{incident_id}/dispatch-checker")
+def dispatch_to_checker(
+    incident_id: str,
+    checker_user_id: str = Query(...),
+    department_id: str | None = Query(None),
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    sb = get_supabase()
+    incident = sb.table("incidents").select("*").eq("id", incident_id).single().execute().data
+    rec = recommend_department(incident.get("primary_issue_type"))
+    dept_id = department_id or rec.get("department_id")
+    if not dept_id:
+        raise HTTPException(status_code=400, detail="No department available")
+
+    checker = sb.table("users").select("id, role").eq("id", checker_user_id).single().execute().data
+    if checker.get("role") != "field_checker":
+        raise HTTPException(status_code=400, detail="User is not a field checker")
+
+    sb.table("incidents").update({
+        "assigned_department_id": dept_id,
+        "status": "assigned",
+    }).eq("id", incident_id).execute()
+
+    assignment = (
+        sb.table("dispatch_assignments")
+        .insert({
+            "incident_id": incident_id,
+            "department_id": dept_id,
+            "checker_user_id": checker_user_id,
+            "assigned_by_user_id": user.id,
+            "dispatch_status": "assigned",
+            "priority": incident.get("triage_priority") or 0,
+        })
+        .execute()
+        .data[0]
+    )
+    sb.table("dispatch_activity_log").insert({
+        "dispatch_assignment_id": assignment["id"],
+        "actor_user_id": user.id,
+        "dispatch_status": "assigned",
+        "notes": f"Assigned to field checker for {rec.get('dispatch_label', 'site inspection')}",
+    }).execute()
+    sb.table("department_assignments").insert({
+        "incident_id": incident_id,
+        "department_id": dept_id,
+        "assigned_by_user_id": user.id,
+        "assigned_to_user_id": checker_user_id,
+        "status": "assigned",
+    }).execute()
+    log_audit(user.id, "dispatch_checker", "incident", incident_id, {
+        "checker_user_id": checker_user_id,
+        "department_id": dept_id,
+    })
+    return {"status": "assigned", "assignment_id": assignment["id"], "recommendation": rec}
+
+
 @router.post("/{incident_id}/dispatch")
 def dispatch_incident(incident_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+    """Legacy dispatch — marks ongoing if assignment exists."""
     sb = get_supabase()
+    existing = (
+        sb.table("dispatch_assignments")
+        .select("id")
+        .eq("incident_id", incident_id)
+        .limit(1)
+        .execute()
+        .data
+    )
+    if not existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Assign a field checker first using dispatch-checker",
+        )
     sb.table("incidents").update({"status": "ongoing"}).eq("id", incident_id).execute()
+    sb.table("dispatch_assignments").update({"dispatch_status": "on_the_way"}).eq("id", existing[0]["id"]).execute()
     log_audit(user.id, "dispatch", "incident", incident_id, {})
     return {"status": "ongoing"}
 

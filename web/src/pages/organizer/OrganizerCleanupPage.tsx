@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { ButtonPrimary } from '../../components/ui/Buttons';
+import { EventBannerUpload } from '../../components/events/EventBannerUpload';
 import {
   FORM_FIELD_INPUT,
   LocationPickerSection,
@@ -12,10 +13,13 @@ import {
 } from '../../components/organizer/OrganizerEventDetailCard';
 import { useProfile } from '../../hooks/useProfile';
 import { useOrganizerCleanup } from './OrganizerLayout';
+import { formatDefaultMapCoordinates } from '../../shared/constants';
 
 interface CleanupEvent extends OrganizerCleanupEvent {
   max_volunteers: number;
 }
+
+const DEFAULT_COORDS = formatDefaultMapCoordinates();
 
 const EMPTY_FORM = {
   title: '',
@@ -24,8 +28,8 @@ const EMPTY_FORM = {
   scheduled_start: '',
   scheduled_end: '',
   max_volunteers: 50,
-  latitude: '',
-  longitude: '',
+  latitude: DEFAULT_COORDS.latitude,
+  longitude: DEFAULT_COORDS.longitude,
 };
 
 function statusClass(status: string) {
@@ -43,6 +47,8 @@ export default function OrganizerCleanupPage() {
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [bannerUrl, setBannerUrl] = useState('');
+  const [bannerPreview, setBannerPreview] = useState('');
 
   const load = useCallback(() => {
     api<CleanupEvent[]>('/api/cleanup-events?mine=true').then(setEvents).catch(() => setEvents([]));
@@ -83,16 +89,23 @@ export default function OrganizerCleanupPage() {
     setFormError('');
     setCreating(true);
     try {
+      const payload = {
+        ...form,
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+        ...(bannerUrl ? { banner_url: bannerUrl } : {}),
+      };
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'OrganizerCleanupPage.tsx:createEvent',message:'create cleanup with banner',data:{hasBanner:Boolean(bannerUrl)},timestamp:Date.now(),hypothesisId:'H1',runId:'banner-feature'})}).catch(()=>{});
+      // #endregion
       await api('/api/cleanup-events', {
         method: 'POST',
-        body: JSON.stringify({
-          ...form,
-          latitude: Number(form.latitude),
-          longitude: Number(form.longitude),
-        }),
+        body: JSON.stringify(payload),
       });
       setShowForm(false);
       setForm(EMPTY_FORM);
+      setBannerUrl('');
+      setBannerPreview('');
       load();
     } finally {
       setCreating(false);
@@ -101,6 +114,18 @@ export default function OrganizerCleanupPage() {
 
   const selectedEvent = events.find((ev) => ev.id === selectedId) ?? null;
   const organizerName = profile?.organization_name || profile?.full_name || 'Organizer';
+
+  async function updateSelectedBanner(url: string) {
+    if (!selectedEvent || !url) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'OrganizerCleanupPage.tsx:updateSelectedBanner',message:'patch event banner',data:{eventId:selectedEvent.id,hasUrl:Boolean(url)},timestamp:Date.now(),hypothesisId:'H2',runId:'banner-feature'})}).catch(()=>{});
+    // #endregion
+    await api(`/api/cleanup-events/${selectedEvent.id}/banner`, {
+      method: 'PATCH',
+      body: JSON.stringify({ banner_url: url }),
+    });
+    load();
+  }
 
   return (
     <div className="min-h-screen bg-canvas-parchment">
@@ -125,6 +150,15 @@ export default function OrganizerCleanupPage() {
                 <h2 className="text-lg font-semibold text-ink">Drive details</h2>
                 <p className="mt-1 text-sm text-ink-muted-48">Describe the cleanup and when volunteers should arrive.</p>
               </div>
+
+              <EventBannerUpload
+                value={bannerUrl}
+                previewUrl={bannerPreview}
+                onChange={(url, preview) => {
+                  setBannerUrl(url);
+                  setBannerPreview(preview);
+                }}
+              />
 
               <label className="block">
                 <span className="mb-2 block text-sm font-medium text-ink">Title</span>
@@ -257,11 +291,24 @@ export default function OrganizerCleanupPage() {
                 Select a drive to view details.
               </div>
             ) : (
-              <OrganizerEventDetailCard
-                event={selectedEvent}
-                organizerName={organizerName}
-                goingCount={goingCount}
-              />
+              <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+                <OrganizerEventDetailCard
+                  event={selectedEvent}
+                  organizerName={organizerName}
+                  goingCount={goingCount}
+                />
+                <div className="store-utility-card bg-canvas p-4">
+                  <EventBannerUpload
+                    value={selectedEvent.banner_url || ''}
+                    previewUrl=""
+                    label="Community banner"
+                    hint="Shown on the public event page and map preview."
+                    onChange={(url) => {
+                      if (url) void updateSelectedBanner(url);
+                    }}
+                  />
+                </div>
+              </div>
             )}
           </div>
         </div>

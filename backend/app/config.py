@@ -59,6 +59,7 @@ class Settings(BaseSettings):
     duplicate_radius_m: float = 25.0
     attendance_gps_radius_m: float = 100.0
     demo_lgu_auto_role: bool = False
+    mobile_demo_base_url: str = "https://civx.xrnozy.me/mobile"
     public_web_url: str = "http://localhost:5173"
     google_maps_api_key: str = ""
 

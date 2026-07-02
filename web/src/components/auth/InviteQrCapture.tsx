@@ -17,7 +17,7 @@ const MODES: { id: CaptureMode; label: string; hint: string }[] = [
 ];
 
 export function InviteQrCapture({ value, onChange, onTokenResolved }: InviteQrCaptureProps) {
-  const [mode, setMode] = useState<CaptureMode>('scan');
+  const [mode, setMode] = useState<CaptureMode>('manual');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');

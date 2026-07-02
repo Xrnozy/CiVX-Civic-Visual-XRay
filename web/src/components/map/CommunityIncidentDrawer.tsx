@@ -108,7 +108,7 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
       <aside
         className={
           overlay
-            ? 'flex h-full w-full flex-col items-center justify-center rounded-r-[20px] border border-l-0 border-hairline bg-canvas shadow-2xl'
+            ? 'flex h-full w-full flex-col items-center justify-center rounded-[20px] border border-hairline bg-canvas shadow-2xl'
             : 'flex min-h-[320px] flex-col items-center justify-center rounded-[20px] border border-hairline bg-canvas'
         }
       >
@@ -126,7 +126,7 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
     <aside
       className={
         overlay
-          ? 'flex h-full w-full flex-col overflow-hidden rounded-r-[20px] border border-l-0 border-hairline bg-canvas shadow-2xl'
+          ? 'flex h-full w-full flex-col overflow-hidden rounded-[20px] border border-hairline bg-canvas shadow-2xl'
           : 'flex max-h-[min(85vh,720px)] flex-col overflow-hidden rounded-[20px] border border-hairline bg-canvas'
       }
     >
@@ -198,17 +198,23 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
           {gallery.length === 0 ? (
             <p className="mt-2 text-sm text-ink-muted-48">No uploaded photos found for this incident.</p>
           ) : (
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              {gallery.map((url) => (
-                <button
-                  key={url}
-                  type="button"
-                  onClick={() => openGallery(url)}
-                  className="overflow-hidden rounded-[11px] border border-hairline bg-canvas-parchment text-left"
-                >
-                  <img src={url} alt="Incident evidence" className="h-24 w-full object-cover transition hover:scale-105" />
-                </button>
-              ))}
+            <div className="mt-3 rounded-[11px] border border-hairline bg-canvas-parchment px-4 py-3">
+              <div className="flex flex-wrap gap-3 pl-1">
+                {gallery.map((url) => (
+                  <button
+                    key={url}
+                    type="button"
+                    onClick={() => openGallery(url)}
+                    className="my-1 ml-2 shrink-0 overflow-hidden rounded-[11px] border border-hairline bg-canvas text-left"
+                  >
+                    <img
+                      src={url}
+                      alt="Incident evidence"
+                      className="h-24 w-24 object-contain p-1 transition hover:scale-105"
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

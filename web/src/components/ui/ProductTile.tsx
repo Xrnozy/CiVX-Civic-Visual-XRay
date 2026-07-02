@@ -34,17 +34,25 @@ export function ProductTile({
   const isDark = variant === 'dark';
 
   return (
-    <section className={cls}>
-      <div className="mx-auto max-w-4xl">
+    <section className={`${cls} motion-reveal-section`} data-no-motion>
+      <div className="relative z-10 mx-auto max-w-4xl">
         {eyebrow && <p className="eyebrow">{eyebrow}</p>}
-        <h1 className={`text-[40px] font-semibold tracking-tight md:text-[56px] ${isDark ? 'text-white' : 'text-ink'}`}>
+        <h1
+          className={`text-[40px] font-semibold tracking-[-0.03em] md:text-[56px] md:leading-[1.07] ${
+            isDark ? 'text-white' : 'text-ink'
+          }`}
+        >
           {title}
         </h1>
-        <p className={`mx-auto mt-4 max-w-2xl text-[21px] font-normal leading-snug md:text-[28px] ${isDark ? 'text-body-muted' : 'text-ink-muted-80'}`}>
+        <p
+          className={`mx-auto mt-5 max-w-2xl text-[21px] font-normal leading-[1.35] md:text-[28px] md:leading-[1.14] ${
+            isDark ? 'text-body-muted' : 'text-ink-muted-80'
+          }`}
+        >
           {tagline}
         </p>
         {(ctaPrimary || ctaSecondary) && (
-          <div className="mt-10 flex flex-wrap justify-center gap-4">
+          <div className="mt-12 flex flex-wrap justify-center gap-4">
             {ctaPrimary && (
               <Link to={ctaPrimary.to}>
                 <ButtonPrimary>{ctaPrimary.label}</ButtonPrimary>

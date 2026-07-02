@@ -15,20 +15,20 @@ from app.db import get_supabase
 security = HTTPBearer(auto_error=False)
 
 _firebase_initialized = False
-_DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-76c51b.log"
+_debug_log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
 
 
 def _agent_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
     try:
         payload = {
-            "sessionId": "76c51b",
+            "sessionId": "8b92e3",
             "location": location,
             "message": message,
             "data": data,
             "timestamp": int(time.time() * 1000),
             "hypothesisId": hypothesis_id,
         }
-        with _DEBUG_LOG.open("a", encoding="utf-8") as f:
+        with _debug_log.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload) + "\n")
     except Exception:
         pass
@@ -76,7 +76,7 @@ async def get_current_user(
     result = sb.table("users").select("*").eq("firebase_uid", firebase_uid).limit(1).execute()
     if result.data:
         row = result.data[0]
-        _agent_log("firebase.py:get_current_user", "found existing user", {"userId": row.get("id")}, "H1")
+        _agent_log("firebase.py:get_current_user", "found by firebase_uid", {"userId": row.get("id")}, "H5")
         role = row.get("role", "citizen")
         if settings.demo_lgu_auto_role and role == "citizen":
             sb.table("users").update({"role": "lgu_staff"}).eq("id", row["id"]).execute()
@@ -90,8 +90,40 @@ async def get_current_user(
             registration_completed=bool(row.get("registration_completed_at")),
         )
 
+    if email:
+        email_result = (
+            sb.table("users")
+            .select("*")
+            .ilike("email", email.strip())
+            .limit(1)
+            .execute()
+        )
+        if email_result.data:
+            row = email_result.data[0]
+            if row.get("firebase_uid") != firebase_uid:
+                _agent_log(
+                    "firebase.py:get_current_user",
+                    "rebinding firebase_uid by email",
+                    {"userId": row.get("id"), "oldUid": row.get("firebase_uid")[:8]},
+                    "H5",
+                )
+                sb.table("users").update({
+                    "firebase_uid": firebase_uid,
+                    "email": email,
+                }).eq("id", row["id"]).execute()
+                row["firebase_uid"] = firebase_uid
+            role = row.get("role", "citizen")
+            return AuthUser(
+                id=row["id"],
+                firebase_uid=firebase_uid,
+                email=row.get("email") or email,
+                full_name=row.get("full_name") or name,
+                role=role,
+                registration_completed=bool(row.get("registration_completed_at")),
+            )
+
     default_role = "lgu_staff" if settings.demo_lgu_auto_role else "citizen"
-    _agent_log("firebase.py:get_current_user", "inserting new user", {"firebase_uid": firebase_uid, "role": default_role}, "H1")
+    _agent_log("firebase.py:get_current_user", "inserting new user", {"firebase_uid": firebase_uid[:8], "role": default_role}, "H5")
     try:
         insert = sb.table("users").insert({
             "firebase_uid": firebase_uid,
@@ -100,9 +132,9 @@ async def get_current_user(
             "role": default_role,
         }).execute()
         row = insert.data[0]
-        _agent_log("firebase.py:get_current_user", "insert ok", {"userId": row.get("id")}, "H1")
+        _agent_log("firebase.py:get_current_user", "insert ok", {"userId": row.get("id")}, "H5")
     except Exception as exc:
-        _agent_log("firebase.py:get_current_user", "insert failed", {"error": str(exc)[:300]}, "H1")
+        _agent_log("firebase.py:get_current_user", "insert failed", {"error": str(exc)[:300]}, "H5")
         raise
     return AuthUser(
         id=row["id"],

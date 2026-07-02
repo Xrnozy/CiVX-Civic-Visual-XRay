@@ -82,7 +82,7 @@ class PassiveVideoAgent:
 
     def _match_gps(self, trace: list, timestamp: float) -> tuple[float, float]:
         if not trace:
-            return 14.5995, 120.9842
+            return 14.55, 121.03
         best = trace[0]
         best_diff = abs(trace[0].get("t", 0) - timestamp)
         for pt in trace:
@@ -90,7 +90,7 @@ class PassiveVideoAgent:
             if diff < best_diff:
                 best_diff = diff
                 best = pt
-        return best.get("lat", 14.5995), best.get("lng", 120.9842)
+        return best.get("lat", 14.55), best.get("lng", 121.03)
 
     def _download_chunk(self, storage_url: str) -> str:
         import httpx

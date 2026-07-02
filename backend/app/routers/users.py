@@ -1,4 +1,7 @@
 from datetime import datetime, timezone
+import json
+import time
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -19,6 +22,24 @@ PUBLIC_WORKER_TYPES = {
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
+_DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+
+
+def _agent_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
+    try:
+        payload = {
+            "sessionId": "8b92e3",
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+            "hypothesisId": hypothesis_id,
+        }
+        with _DEBUG_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
+
 ACCOUNT_TYPE_TO_ROLE = {
     "citizen": "citizen",
     "organizer": "organizer",
@@ -26,7 +47,7 @@ ACCOUNT_TYPE_TO_ROLE = {
 }
 
 LGU_TEAM_ROLES = ("lgu_admin", "lgu_staff", "field_worker")
-ASSIGNABLE_ROLES = ("lgu_staff", "field_worker", "lgu_admin", "citizen")
+ASSIGNABLE_ROLES = ("lgu_staff", "field_worker", "field_checker", "lgu_admin", "citizen")
 USER_LIST_FIELDS = "id, full_name, email, role, barangay, registration_completed_at, created_at"
 
 
@@ -37,15 +58,7 @@ def get_me(user: AuthUser = Depends(get_current_user)):
         row = sb.table("users").select("*").eq("id", user.id).single().execute().data
     except Exception as exc:
         # #region agent log
-        try:
-            import json
-            import time
-            from pathlib import Path
-            payload = {"sessionId": "76c51b", "location": "users.py:get_me", "message": "select failed", "data": {"userId": user.id, "error": str(exc)[:300]}, "timestamp": int(time.time() * 1000), "hypothesisId": "H4"}
-            with (Path(__file__).resolve().parents[3] / "debug-76c51b.log").open("a", encoding="utf-8") as f:
-                f.write(json.dumps(payload) + "\n")
-        except Exception:
-            pass
+        _agent_log("users.py:get_me", "select failed", {"userId": user.id, "error": str(exc)[:300]}, "H5")
         # #endregion
         raise
     return {
@@ -58,8 +71,17 @@ def get_me(user: AuthUser = Depends(get_current_user)):
 def complete_registration(body: CompleteRegistration, user: AuthUser = Depends(get_current_user)):
     sb = get_supabase()
     row = sb.table("users").select("*").eq("id", user.id).single().execute().data
+    _agent_log(
+        "users.py:complete_registration",
+        "request",
+        {"userId": user.id, "accountType": body.account_type, "alreadyComplete": bool(row.get("registration_completed_at"))},
+        "H3",
+    )
     if row.get("registration_completed_at"):
-        raise HTTPException(status_code=400, detail="Registration already completed")
+        return {
+            **row,
+            "registration_completed": True,
+        }
 
     account_type = body.account_type
     if account_type not in ACCOUNT_TYPE_TO_ROLE:
@@ -71,6 +93,8 @@ def complete_registration(body: CompleteRegistration, user: AuthUser = Depends(g
     if account_type == "organizer":
         if not body.organization_name or not body.organization_name.strip():
             raise HTTPException(status_code=400, detail="Organization name is required for community leaders")
+        if not body.organization_logo_url or not body.organization_logo_url.strip():
+            raise HTTPException(status_code=400, detail="Organization logo is required for community leaders")
     elif account_type == "street_sweeper":
         if not body.invite_token:
             raise HTTPException(status_code=400, detail="Worker invite token is required")
@@ -90,6 +114,10 @@ def complete_registration(body: CompleteRegistration, user: AuthUser = Depends(g
     }
     if body.organization_name:
         updates["organization_name"] = body.organization_name.strip()
+    if body.organization_logo_url:
+        updates["organization_logo_url"] = body.organization_logo_url.strip()
+    if body.profile_photo_url:
+        updates["profile_photo_url"] = body.profile_photo_url.strip()
     if invite_id:
         updates["invite_id"] = invite_id
         if not body.barangay.strip() and invite.get("barangay"):
@@ -103,6 +131,7 @@ def complete_registration(body: CompleteRegistration, user: AuthUser = Depends(g
 
     log_audit(user.id, "complete_registration", "user", user.id, {"role": role, "account_type": account_type})
     updated = sb.table("users").select("*").eq("id", user.id).single().execute().data
+    _agent_log("users.py:complete_registration", "completed", {"userId": user.id, "role": role}, "H3")
     return {
         **updated,
         "registration_completed": True,

@@ -25,6 +25,13 @@ export default function LoginPage() {
   const { user, ready } = useAuth();
   const { profile, ready: profileReady } = useProfile();
   const nextPath = new URLSearchParams(location.search).get('next');
+  const sessionFromUrl = new URLSearchParams(location.search).get('session');
+
+  useEffect(() => {
+    if (sessionFromUrl) {
+      sessionStorage.setItem('civx_demo_session_token', sessionFromUrl);
+    }
+  }, [sessionFromUrl]);
 
   useEffect(() => {
     if (!ready || !user || !profileReady) return;

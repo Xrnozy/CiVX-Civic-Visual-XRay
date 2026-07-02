@@ -41,6 +41,25 @@ interface Department {
   code: string;
 }
 
+interface Checker {
+  id: string;
+  full_name: string;
+  email?: string;
+}
+
+interface DispatchRec {
+  department_id?: string;
+  department_name?: string;
+  dispatch_label?: string;
+}
+
+interface DispatchActivity {
+  id: string;
+  dispatch_status?: string;
+  notes?: string;
+  created_at: string;
+}
+
 interface Props {
   incident: Incident;
   departments: Department[];
@@ -63,6 +82,10 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
   const [reports, setReports] = useState<Report[]>([]);
   const [loadingReports, setLoadingReports] = useState(true);
   const [assignDept, setAssignDept] = useState(incident.suggested_department_id ?? '');
+  const [checkers, setCheckers] = useState<Checker[]>([]);
+  const [selectedChecker, setSelectedChecker] = useState('');
+  const [dispatchRec, setDispatchRec] = useState<DispatchRec | null>(null);
+  const [dispatchActivity, setDispatchActivity] = useState<DispatchActivity[]>([]);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -72,6 +95,23 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
       .then(setReports)
       .catch(() => setReports([]))
       .finally(() => setLoadingReports(false));
+
+    api<DispatchRec>(`/api/incidents/${incident.id}/dispatch-recommendation`)
+      .then((rec) => {
+        setDispatchRec(rec);
+        if (!incident.assigned_department_id && rec.department_id) {
+          setAssignDept(rec.department_id);
+        }
+      })
+      .catch(() => setDispatchRec(null));
+
+    api<{ activity: DispatchActivity[] }>(`/api/incidents/${incident.id}/dispatch-status`)
+      .then((d) => setDispatchActivity(d.activity || []))
+      .catch(() => setDispatchActivity([]));
+
+    api<Checker[]>('/api/dispatch/checkers')
+      .then(setCheckers)
+      .catch(() => setCheckers([]));
   }, [incident.id, incident.assigned_department_id, incident.suggested_department_id]);
 
   const suggestedDept = departments.find((d) => d.id === incident.suggested_department_id);
@@ -94,6 +134,7 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
 
   const canVerify = ['detected', 'pending_review'].includes(incident.status);
   const canAssign = ['verified', 'pending_review', 'detected'].includes(incident.status);
+  const canDispatchChecker = ['verified', 'assigned'].includes(incident.status);
   const canDispatch = incident.status === 'assigned';
   const canResolve = ['assigned', 'ongoing', 'verified'].includes(incident.status);
 
@@ -213,6 +254,51 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
         )}
       </div>
 
+      {dispatchRec?.dispatch_label && (
+        <div className="mt-4 rounded-[11px] border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+          <p className="text-xs font-semibold uppercase tracking-widest text-primary">Recommended field check</p>
+          <p className="mt-1 font-medium text-ink">{dispatchRec.dispatch_label}</p>
+          {dispatchRec.department_name ? (
+            <p className="text-xs text-ink-muted-48">{dispatchRec.department_name}</p>
+          ) : null}
+        </div>
+      )}
+
+      {dispatchActivity.length > 0 && (
+        <div className="mt-4">
+          <p className="text-xs font-semibold uppercase tracking-widest text-ink-muted-48">Dispatch progress</p>
+          <ul className="mt-2 space-y-2">
+            {dispatchActivity.map((a) => (
+              <li key={a.id} className="text-xs text-ink-muted-80">
+                <span className="font-medium capitalize">{a.dispatch_status?.replace(/_/g, ' ') || 'Update'}</span>
+                {a.notes ? ` — ${a.notes}` : ''}
+                <span className="text-ink-muted-48"> · {timeAgo(a.created_at)}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {canDispatchChecker && checkers.length > 0 && (
+        <div className="mt-4">
+          <label className="text-xs font-semibold uppercase tracking-widest text-ink-muted-48">
+            Assign field checker
+          </label>
+          <select
+            className="filter-select mt-2 w-full"
+            value={selectedChecker}
+            onChange={(e) => setSelectedChecker(e.target.value)}
+          >
+            <option value="">Select field checker…</option>
+            {checkers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.full_name} {c.email ? `(${c.email})` : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {canAssign && (
         <div className="mt-4">
           <label className="text-xs font-semibold uppercase tracking-widest text-ink-muted-48">
@@ -261,9 +347,24 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
             Assign
           </ButtonPrimary>
         )}
+        {canDispatchChecker && selectedChecker && (
+          <ButtonPrimary
+            disabled={busy}
+            onClick={() =>
+              run(() =>
+                api(
+                  `/api/incidents/${incident.id}/dispatch-checker?checker_user_id=${encodeURIComponent(selectedChecker)}${assignDept ? `&department_id=${encodeURIComponent(assignDept)}` : ''}`,
+                  { method: 'POST' },
+                ),
+              )
+            }
+          >
+            Send to field checker
+          </ButtonPrimary>
+        )}
         {canDispatch && (
           <ButtonPrimary disabled={busy} onClick={() => run(() => api(`/api/incidents/${incident.id}/dispatch`, { method: 'POST' }))}>
-            Dispatch
+            Mark en route
           </ButtonPrimary>
         )}
         {canResolve && (

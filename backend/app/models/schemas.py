@@ -27,6 +27,11 @@ class CleanupEventCreate(BaseModel):
     scheduled_end: str
     max_volunteers: int = 50
     issue_or_incident_id: str | None = None
+    banner_url: str | None = None
+
+
+class CleanupEventBannerUpdate(BaseModel):
+    banner_url: str
 
 
 class VolunteerRegister(BaseModel):
@@ -92,6 +97,8 @@ class UserProfileUpdate(BaseModel):
     phone_number: str | None = None
     barangay: str | None = None
     organization_name: str | None = None
+    profile_photo_url: str | None = None
+    organization_logo_url: str | None = None
 
 
 class CompleteRegistration(BaseModel):
@@ -100,6 +107,8 @@ class CompleteRegistration(BaseModel):
     phone_number: str
     barangay: str
     organization_name: str | None = None
+    organization_logo_url: str | None = None
+    profile_photo_url: str | None = None
     invite_token: str | None = None
     public_worker_type: str | None = None
 

@@ -37,7 +37,9 @@ export function ProfileProvider({ children }: { children: ReactNode }) {
       setProfile(me);
       loadedUidRef.current = user.uid;
     } catch {
-      /* keep last known profile so nav links do not flicker */
+      if (loadedUidRef.current !== user.uid) {
+        setProfile(null);
+      }
     } finally {
       setReady(true);
     }

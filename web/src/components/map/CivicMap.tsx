@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader } from '@googlemaps/js-api-loader';
 import { MarkerClusterer, MarkerClustererEvents } from '@googlemaps/markerclusterer';
-import { DEFAULT_MAP_CENTER } from '../../shared/constants';
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_PIN_ZOOM, DEFAULT_MAP_ZOOM } from '../../shared/constants';
+import { mergeMapMarkersByProximity, MAP_MARKER_MERGE_RADIUS_M } from '../../shared/mergeMapMarkers';
+import { buildGoogleMapsIssueIcon, CLEANUP_MARKER_COLOR } from '../../shared/mapMarkers';
 
 interface MarkerData {
   id: string;
@@ -23,6 +25,8 @@ interface MarkerData {
   preview_created_at?: string;
   barangay?: string;
   scheduled_start?: string;
+  merged_count?: number;
+  merged_ids?: string[];
 }
 
 interface Props {
@@ -37,6 +41,12 @@ interface Props {
   onMarkerSelect?: (marker: MarkerData) => void;
   onMapBackgroundClick?: () => void;
   onPreviewExpand?: (markerId: string) => void;
+  /** Hide map/satellite toggle and fullscreen control (e.g. community map page). */
+  hideMapChrome?: boolean;
+  /** Edge-to-edge map (no rounded corners on map surface). */
+  flush?: boolean;
+  /** Merge markers within this many meters (real-world). Default 1 m; set 0 to disable. */
+  mergeProximityMeters?: number;
 }
 
 const MAPS_PROJECT_ID = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'civx-d53ad';
@@ -59,16 +69,16 @@ function isValidMarker(mk: MarkerData): boolean {
   return Boolean(mk.title);
 }
 
-function buildClusterDotIcon(count: number): any {
+function buildClusterDotIcon(count: number, color = '#d93025'): any {
   const size = clusterDotSize(count);
   const fontSize = count >= 100 ? 48 : count >= 10 ? 54 : 60;
   const svg = encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 240 240">`
-      + '<circle cx="120" cy="120" r="112" fill="#d93025" opacity="0.10"/>'
-      + '<circle cx="120" cy="120" r="92" fill="#d93025" opacity="0.18"/>'
-      + '<circle cx="120" cy="120" r="72" fill="#d93025" opacity="0.30"/>'
-      + '<circle cx="120" cy="120" r="54" fill="#d93025" opacity="0.48"/>'
-      + '<circle cx="120" cy="120" r="44" fill="#d93025" stroke="#ffffff" stroke-width="5"/>'
+      + `<circle cx="120" cy="120" r="112" fill="${color}" opacity="0.10"/>`
+      + `<circle cx="120" cy="120" r="92" fill="${color}" opacity="0.18"/>`
+      + `<circle cx="120" cy="120" r="72" fill="${color}" opacity="0.30"/>`
+      + `<circle cx="120" cy="120" r="54" fill="${color}" opacity="0.48"/>`
+      + `<circle cx="120" cy="120" r="44" fill="${color}" stroke="#ffffff" stroke-width="5"/>`
       + `<text x="120" y="122" text-anchor="middle" dominant-baseline="central" fill="#ffffff" font-family="Roboto,Arial,sans-serif" font-size="${fontSize}" font-weight="500">${count}</text>`
       + '</svg>'
   );
@@ -79,37 +89,27 @@ function buildClusterDotIcon(count: number): any {
   };
 }
 
-function buildIncidentDotIcon(): any {
-  const size = 36;
-  const svg = encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 240 240">`
-      + '<circle cx="120" cy="120" r="112" fill="#d93025" opacity="0.10"/>'
-      + '<circle cx="120" cy="120" r="92" fill="#d93025" opacity="0.18"/>'
-      + '<circle cx="120" cy="120" r="72" fill="#d93025" opacity="0.30"/>'
-      + '<circle cx="120" cy="120" r="54" fill="#d93025" opacity="0.48"/>'
-      + '<circle cx="120" cy="120" r="44" fill="#d93025" stroke="#ffffff" stroke-width="5"/>'
-      + '</svg>'
-  );
+function buildPinIcon(): any {
+  const iconSpec = buildGoogleMapsIssueIcon(undefined, 'incident');
+  const gmaps = (window as any).google?.maps;
   return {
-    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
-    scaledSize: new (window as any).google.maps.Size(size, size),
-    anchor: new (window as any).google.maps.Point(size / 2, size / 2),
+    url: iconSpec.url,
+    scaledSize: new gmaps.Size(iconSpec.scaledSize.width, iconSpec.scaledSize.height),
+    anchor: new gmaps.Point(iconSpec.anchor.x, iconSpec.anchor.y),
   };
 }
 
-function buildPinIcon(): any {
-  const svg = encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" width="42" height="56" viewBox="0 0 42 56">'
-      + '<defs><filter id="s" x="-40%" y="-20%" width="180%" height="180%">'
-      + '<feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.28"/></filter></defs>'
-        + '<path filter="url(#s)" d="M21 2C11.06 2 3 10.06 3 20c0 12.6 13.2 26.9 16.67 30.41a2 2 0 0 0 2.86 0C25.8 46.9 39 32.6 39 20 39 10.06 30.94 2 21 2z" fill="#d93025"/>'
-      + '<circle cx="21" cy="20" r="7.2" fill="#fff"/>'
-      + '</svg>'
-  );
+function toGoogleMapsIcon(
+  issueType?: string,
+  markerType: 'incident' | 'cleanup' = 'incident',
+  mergedCount = 1,
+): any {
+  const iconSpec = buildGoogleMapsIssueIcon(issueType, markerType, mergedCount);
+  const gmaps = (window as any).google?.maps;
   return {
-    url: `data:image/svg+xml;charset=UTF-8,${svg}`,
-    scaledSize: new (window as any).google.maps.Size(42, 56),
-    anchor: new (window as any).google.maps.Point(21, 54),
+    url: iconSpec.url,
+    scaledSize: new gmaps.Size(iconSpec.scaledSize.width, iconSpec.scaledSize.height),
+    anchor: new gmaps.Point(iconSpec.anchor.x, iconSpec.anchor.y),
   };
 }
 
@@ -117,7 +117,7 @@ export function CivicMap({
   markers,
   lguMode = false,
   center = DEFAULT_MAP_CENTER,
-  zoom = 13,
+  zoom = DEFAULT_MAP_ZOOM,
   selectedLocation,
   onLocationPick,
   heightClass = 'h-[70vh]',
@@ -125,6 +125,9 @@ export function CivicMap({
   onMarkerSelect,
   onMapBackgroundClick,
   onPreviewExpand,
+  hideMapChrome = false,
+  flush = false,
+  mergeProximityMeters = MAP_MARKER_MERGE_RADIUS_M,
 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<any>(null);
@@ -138,6 +141,36 @@ export function CivicMap({
   const infoWindowRef = useRef<any>(null);
   const selectedMarkerRef = useRef<any>(null);
   const clickListenerRef = useRef<any>(null);
+  const onMarkerSelectRef = useRef(onMarkerSelect);
+  const onMapBackgroundClickRef = useRef(onMapBackgroundClick);
+  const onPreviewExpandRef = useRef(onPreviewExpand);
+  const onLocationPickRef = useRef(onLocationPick);
+  const suppressMapClickRef = useRef(false);
+  const openInfoMarkerIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    onMarkerSelectRef.current = onMarkerSelect;
+  }, [onMarkerSelect]);
+
+  useEffect(() => {
+    onMapBackgroundClickRef.current = onMapBackgroundClick;
+  }, [onMapBackgroundClick]);
+
+  useEffect(() => {
+    onPreviewExpandRef.current = onPreviewExpand;
+  }, [onPreviewExpand]);
+
+  useEffect(() => {
+    onLocationPickRef.current = onLocationPick;
+  }, [onLocationPick]);
+
+  const displayMarkers = useMemo(() => {
+    const valid = markers.filter(isValidMarker);
+    if (!mergeProximityMeters || mergeProximityMeters <= 0) {
+      return valid.map((m) => ({ ...m, merged_count: 1, merged_ids: [m.id] }));
+    }
+    return mergeMapMarkersByProximity(valid, mergeProximityMeters) as MarkerData[];
+  }, [markers, mergeProximityMeters]);
 
   function escapeHtml(value: string): string {
     return value
@@ -157,7 +190,9 @@ export function CivicMap({
     );
     const submittedAt = marker.preview_created_at || marker.created_at;
     const dateBadge = escapeHtml(formatDateBadge(submittedAt));
-    const subtitle = `${submitter} · ${sourceLabel}`;
+    const subtitle = marker.merged_count && marker.merged_count > 1
+      ? `${submitter} · ${sourceLabel} · ${marker.merged_count} within 1 m`
+      : `${submitter} · ${sourceLabel}`;
     const photoUrl = marker.preview_photo_url ? escapeHtml(marker.preview_photo_url) : '';
     const bgStyle = photoUrl
       ? `background-image:url('${photoUrl}');background-size:cover;background-position:center;`
@@ -186,11 +221,28 @@ export function CivicMap({
     return `${month} ${date.getDate()}`;
   }
 
+  /** Pan map so the selected marker + preview card sit near the center of the map pane. */
+  function focusMapOnMarker(gmaps: any, markerData: MarkerData) {
+    if (!map) return;
+    const position = { lat: markerData.latitude, lng: markerData.longitude };
+    const zoom = map.getZoom();
+    if (typeof zoom === 'number' && zoom < DEFAULT_MAP_PIN_ZOOM) {
+      map.setZoom(DEFAULT_MAP_PIN_ZOOM);
+    }
+    map.panTo(position);
+    // Preview card (~256px) sits above the pin; nudge map so the card reads centered.
+    gmaps.event.addListenerOnce(map, 'idle', () => {
+      map.panBy(0, 140);
+    });
+  }
+
   function cleanupPreviewCardHtml(marker: MarkerData, cardId: string): string {
     const title = escapeHtml((marker.title || 'Cleanup event').toUpperCase());
     const location = escapeHtml((marker.barangay || 'Community cleanup').toUpperCase());
     const dateBadge = escapeHtml(formatDateBadge(marker.scheduled_start || marker.created_at || marker.preview_created_at));
-    const subtitle = 'Approved cleanup drive';
+    const subtitle = marker.merged_count && marker.merged_count > 1
+      ? `Approved cleanup drive · ${marker.merged_count} within 1 m`
+      : 'Approved cleanup drive';
 
     return `
       <div id="${cardId}" style="width:256px;height:256px;position:relative;border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 18px 40px rgba(0,0,0,0.28);background:linear-gradient(145deg,#0f766e 0%,#134e4a 100%);font-family:Inter,system-ui,-apple-system,sans-serif;">
@@ -249,6 +301,8 @@ export function CivicMap({
           zoom,
           styles: lguMode ? undefined : [{ featureType: 'poi', stylers: [{ visibility: 'off' }] }],
           disableDefaultUI: false,
+          mapTypeControl: hideMapChrome ? false : true,
+          fullscreenControl: hideMapChrome ? false : true,
         });
         setMap(m);
         setLoading(false);
@@ -264,27 +318,35 @@ export function CivicMap({
       cancelled = true;
       delete (window as Window & { gm_authFailure?: () => void }).gm_authFailure;
     };
-  }, [apiKey, lguMode, center, zoom]);
+  }, [apiKey, lguMode, center, zoom, hideMapChrome]);
+
+  useEffect(() => {
+    if (!map || selectedLocation) return;
+    map.setCenter(center);
+    map.setZoom(zoom);
+  }, [map, center, zoom, selectedLocation]);
 
   useEffect(() => {
     if (!map) return;
-    const gmaps = (window as any).google?.maps;
-    if (!gmaps) return;
     if (clickListenerRef.current) {
       clickListenerRef.current.remove();
       clickListenerRef.current = null;
     }
-    if (!onLocationPick && !onMapBackgroundClick) return;
     clickListenerRef.current = map.addListener('click', (event: any) => {
-      onMapBackgroundClick?.();
-      if (!event.latLng) return;
-      onLocationPick?.(event.latLng.lat(), event.latLng.lng());
+      if (suppressMapClickRef.current) return;
+      if (onMapBackgroundClickRef.current) {
+        onMapBackgroundClickRef.current();
+        return;
+      }
+      if (onLocationPickRef.current && event?.latLng) {
+        onLocationPickRef.current(event.latLng.lat(), event.latLng.lng());
+      }
     });
     return () => {
       clickListenerRef.current?.remove();
       clickListenerRef.current = null;
     };
-  }, [map, onLocationPick, onMapBackgroundClick]);
+  }, [map]);
 
   useEffect(() => {
     if (!map) return;
@@ -304,37 +366,31 @@ export function CivicMap({
     });
     pulseRef.current = [];
     markerByIdRef.current.clear();
-    infoWindowRef.current?.close();
     if (selectedMarkerRef.current) {
       selectedMarkerRef.current.dispose?.();
       selectedMarkerRef.current.setMap(null);
       selectedMarkerRef.current = null;
     }
 
-    const validMarkers = markers.filter(isValidMarker);
+    const validMarkers = displayMarkers;
 
     const gmarkers = validMarkers.flatMap((mk) => {
-      const haloMarker = new gmaps.Marker({
-        position: { lat: mk.latitude, lng: mk.longitude },
-        zIndex: 1,
-      });
-
       const pinMarker = new gmaps.Marker({
         position: { lat: mk.latitude, lng: mk.longitude },
         title: mk.primary_issue_type || mk.title,
-        icon: buildIncidentDotIcon(),
-        zIndex: 2,
+        icon: toGoogleMapsIcon(mk.primary_issue_type, mk.type, mk.merged_count ?? 1),
+        zIndex: mk.type === 'cleanup' ? 3 : 2,
       });
-      pinMarker.addListener('click', () => {
-        onMarkerSelect?.(mk);
+      (pinMarker as { __civxMarkerType?: string }).__civxMarkerType = mk.type;
+      pinMarker.addListener('click', (event: any) => {
+        suppressMapClickRef.current = true;
+        window.setTimeout(() => {
+          suppressMapClickRef.current = false;
+        }, 120);
+        event?.domEvent?.stopPropagation?.();
+        onMarkerSelectRef.current?.(mk);
       });
       markerByIdRef.current.set(mk.id, pinMarker);
-      pulseRef.current.push({
-        halo: haloMarker,
-        anchor: pinMarker,
-        phase: Math.random() * Math.PI * 2,
-        kind: 'incident',
-      });
       return [pinMarker];
     });
 
@@ -357,12 +413,15 @@ export function CivicMap({
           const scale = baseScale + (Math.sin(entry.phase) + 1) * 4;
           const fillOpacity = 0.12 + (Math.sin(entry.phase) + 1) * 0.08;
           const strokeOpacity = 0.2 + (Math.sin(entry.phase) + 1) * 0.12;
+          const clusterColor = entry.kind === 'cluster' && (entry.anchor as { __civxClusterTeal?: boolean }).__civxClusterTeal
+            ? CLEANUP_MARKER_COLOR
+            : '#d93025';
           entry.halo.setIcon({
             path: gmaps.SymbolPath.CIRCLE,
             scale,
-            fillColor: '#d93025',
+            fillColor: clusterColor,
             fillOpacity,
-            strokeColor: '#d93025',
+            strokeColor: clusterColor,
             strokeOpacity,
             strokeWeight: 1,
           });
@@ -475,9 +534,7 @@ export function CivicMap({
         },
       };
       map.panTo({ lat: selectedLocation.latitude, lng: selectedLocation.longitude });
-      if ((map.getZoom() ?? 0) < 15) {
-        map.setZoom(15);
-      }
+      map.setZoom(DEFAULT_MAP_PIN_ZOOM);
     }
 
     let clusterEndListener: { remove: () => void } | null = null;
@@ -487,11 +544,19 @@ export function CivicMap({
         markers: gmarkers,
         map,
         renderer: {
-          render: ({ count, position }) => new gmaps.Marker({
-            position,
-            icon: buildClusterDotIcon(count),
-            zIndex: 1000 + count,
-          }),
+          render: ({ count, position, markers: clusterMarkers }) => {
+            const allCleanup = (clusterMarkers as Array<{ __civxMarkerType?: string }>).every(
+              (m) => m.__civxMarkerType === 'cleanup',
+            );
+            const clusterColor = allCleanup ? CLEANUP_MARKER_COLOR : '#d93025';
+            const clusterMarker = new gmaps.Marker({
+              position,
+              icon: buildClusterDotIcon(count, clusterColor),
+              zIndex: 1000 + count,
+            });
+            (clusterMarker as { __civxClusterTeal?: boolean }).__civxClusterTeal = allCleanup;
+            return clusterMarker;
+          },
         },
       });
       markerClustererRef.current = clusterer;
@@ -520,7 +585,7 @@ export function CivicMap({
       selectedMarkerRef.current?.setMap(null);
       selectedMarkerRef.current = null;
     };
-  }, [map, markers, selectedLocation, onMarkerSelect]);
+  }, [map, displayMarkers, selectedLocation]);
 
   useEffect(() => {
     if (!map) return;
@@ -528,24 +593,40 @@ export function CivicMap({
     if (!gmaps) return;
     if (!selectedMarkerId) {
       infoWindowRef.current?.close();
+      openInfoMarkerIdRef.current = null;
       return;
     }
 
-    const markerData = markers.find((item) => item.id === selectedMarkerId);
-    const marker = markerByIdRef.current.get(selectedMarkerId);
+    const markerData = displayMarkers.find(
+      (item) =>
+        item.id === selectedMarkerId ||
+        (item.merged_ids?.includes(selectedMarkerId) ?? false),
+    );
+    const marker = markerData ? markerByIdRef.current.get(markerData.id) : undefined;
     if (!markerData || !marker) {
       infoWindowRef.current?.close();
+      openInfoMarkerIdRef.current = null;
       return;
     }
 
-    if (!infoWindowRef.current) {
-      infoWindowRef.current = new gmaps.InfoWindow({ headerDisabled: true });
-    }
-    const cardId = `civx-preview-${markerData.id}`;
-    infoWindowRef.current.setContent(markerPreviewHtml(markerData, cardId));
-    infoWindowRef.current.open({ map, anchor: marker });
+    const markerKey = markerData.id;
+    const cardId = `civx-preview-${markerKey}`;
+    const contentHtml = markerPreviewHtml(markerData, cardId);
 
-    gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', () => {
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new gmaps.InfoWindow({
+        headerDisabled: true,
+        disableAutoPan: true,
+        pixelOffset: new gmaps.Size(0, -8),
+      });
+    } else {
+      infoWindowRef.current.setOptions({
+        disableAutoPan: true,
+        pixelOffset: new gmaps.Size(0, -8),
+      });
+    }
+
+    const bindPreviewCard = () => {
       const iwRoot = document.querySelector('.gm-style-iw') as HTMLElement | null;
       const iwOuter = document.querySelector('.gm-style-iw-c') as HTMLElement | null;
       const iwInner = document.querySelector('.gm-style-iw-d') as HTMLElement | null;
@@ -574,18 +655,42 @@ export function CivicMap({
       });
       const card = document.getElementById(cardId);
       if (!card) return;
-      card.onclick = () => onPreviewExpand?.(markerData.id);
-    });
-  }, [map, markers, selectedMarkerId, onPreviewExpand]);
+      card.onclick = (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        suppressMapClickRef.current = true;
+        window.setTimeout(() => {
+          suppressMapClickRef.current = false;
+        }, 200);
+        onPreviewExpandRef.current?.(markerKey);
+      };
+    };
+
+    const sameMarker = openInfoMarkerIdRef.current === markerKey;
+    openInfoMarkerIdRef.current = markerKey;
+
+    focusMapOnMarker(gmaps, markerData);
+
+    if (sameMarker && infoWindowRef.current?.getMap?.()) {
+      infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
+      window.requestAnimationFrame(bindPreviewCard);
+      return;
+    }
+
+    infoWindowRef.current.setContent(contentHtml);
+    infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
+    gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', bindPreviewCard);
+  }, [map, displayMarkers, selectedMarkerId]);
 
   if (mapError) {
     const enableUrl = `https://console.cloud.google.com/apis/library/maps-backend.googleapis.com?project=${MAPS_PROJECT_ID}`;
     const dashboardUrl = `https://console.cloud.google.com/apis/dashboard?project=${MAPS_PROJECT_ID}`;
     const billingUrl = `https://console.cloud.google.com/billing/linkedaccount?project=${MAPS_PROJECT_ID}`;
     const credentialsUrl = `https://console.cloud.google.com/apis/credentials?project=${MAPS_PROJECT_ID}`;
+    const shellRadius = flush ? '' : 'rounded-[24px]';
 
     return (
-      <div className={`flex w-full flex-col items-center justify-center rounded-[24px] border border-hairline bg-canvas-parchment p-8 ${heightClass}`}>
+      <div className={`flex w-full flex-col items-center justify-center border border-hairline bg-canvas-parchment p-8 ${shellRadius} ${heightClass}`}>
         <p className="text-lg font-semibold text-ink">Google Maps setup required</p>
         <p className="mt-2 max-w-xl text-center text-sm text-ink-muted-80">
           {mapError === 'not_activated' && (
@@ -644,7 +749,7 @@ export function CivicMap({
   return (
     <div className={`relative w-full ${heightClass}`}>
       {loading && (
-        <div className="absolute inset-0 z-10 flex items-center justify-center rounded-[24px] bg-canvas-parchment text-sm text-ink-muted-48">
+        <div className={`absolute inset-0 z-10 flex items-center justify-center bg-canvas-parchment text-sm text-ink-muted-48 ${flush ? '' : 'rounded-[24px]'}`}>
           Loading Google Maps…
         </div>
       )}

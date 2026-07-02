@@ -11,6 +11,7 @@ export interface PublicEventDetail {
   going_count?: number;
   organizer_name?: string;
   organizer_profile_photo_url?: string | null;
+  banner_url?: string | null;
 }
 
 export interface EventParticipant {

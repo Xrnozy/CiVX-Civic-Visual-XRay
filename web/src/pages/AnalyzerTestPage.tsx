@@ -386,7 +386,7 @@ export default function AnalyzerTestPage() {
                       className={FORM_FIELD_INPUT}
                       value={latitude}
                       onChange={(e) => setLatitude(e.target.value)}
-                      placeholder="14.579359"
+                      placeholder="14.550000"
                     />
                   </label>
                   <label className="block">
@@ -395,7 +395,7 @@ export default function AnalyzerTestPage() {
                       className={FORM_FIELD_INPUT}
                       value={longitude}
                       onChange={(e) => setLongitude(e.target.value)}
-                      placeholder="121.040089"
+                      placeholder="121.030000"
                     />
                   </label>
                 </div>

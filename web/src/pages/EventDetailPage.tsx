@@ -260,6 +260,7 @@ export default function EventDetailPage() {
             title={event.title}
             organizerName={event.organizer_name || 'Community organizer'}
             organizerPhotoUrl={event.organizer_profile_photo_url}
+            bannerUrl={event.banner_url}
           />
         </div>
 
