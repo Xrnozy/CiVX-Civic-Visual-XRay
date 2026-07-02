@@ -38,6 +38,11 @@ class CleanupEventRejectBody(BaseModel):
     reason: str = Field(min_length=1, max_length=2000)
 
 
+class CleanupProofImagesUpdate(BaseModel):
+    before_image_url: str | None = None
+    after_image_url: str | None = None
+
+
 class VolunteerRegister(BaseModel):
     full_name: str
     phone_number: str | None = None

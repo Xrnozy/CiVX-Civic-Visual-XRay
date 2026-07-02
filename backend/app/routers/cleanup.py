@@ -3,16 +3,23 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
 from app.db import get_supabase
+<<<<<<< HEAD
 from app.models.schemas import CleanupEventBannerUpdate, CleanupEventCreate, CleanupEventRejectBody
+=======
+from app.models.schemas import CleanupEventCreate, CleanupProofImagesUpdate
+>>>>>>> origin/Gallery-Tab
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
 from app.services import attendance as att
 from app.utils.audit import log_audit
+from app.utils.storage import resolve_photo_url
 
 router = APIRouter(prefix="/api/cleanup-events", tags=["cleanup"])
 LGU = ("lgu_admin", "lgu_staff")
+GALLERY_UPLOAD_ROLES = ("lgu_admin", "lgu_staff", "field_worker")
 ORGANIZER_AND_LGU = ("organizer", "lgu_admin", "lgu_staff")
 
 
+<<<<<<< HEAD
 def _enrich_cleanup_event(row: dict) -> dict:
     """Ensure rejected events expose rejection_reason when stored on the row or in audit logs."""
     event = dict(row)
@@ -44,6 +51,25 @@ def _enrich_cleanup_event(row: dict) -> dict:
     except Exception:
         pass
     return event
+=======
+def _has_proof(row: dict) -> bool:
+    before = (row.get("before_photo_url") or "").strip()
+    after = (row.get("after_photo_url") or "").strip()
+    return bool(before and after)
+
+
+def _gallery_entry(row: dict) -> dict:
+    resolution = row.get("completed_at") or row.get("scheduled_end")
+    return {
+        "id": row["id"],
+        "title": row.get("title"),
+        "barangay": row.get("barangay"),
+        "location": row.get("barangay"),
+        "resolution_date": resolution,
+        "before_image_url": resolve_photo_url(row.get("before_photo_url")),
+        "after_image_url": resolve_photo_url(row.get("after_photo_url")),
+    }
+>>>>>>> origin/Gallery-Tab
 
 
 @router.get("")
@@ -85,6 +111,60 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
     agent = CleanupCoordinationAgent()
     agent.match_event_to_incident(row["id"])
     return row
+
+
+@router.get("/gallery")
+def list_gallery_entries():
+    sb = get_supabase()
+    rows = (
+        sb.table("cleanup_events")
+        .select("id,title,barangay,scheduled_end,completed_at,before_photo_url,after_photo_url")
+        .not_.is_("before_photo_url", "null")
+        .not_.is_("after_photo_url", "null")
+        .order("completed_at", desc=True)
+        .order("scheduled_end", desc=True)
+        .limit(200)
+        .execute()
+        .data
+        or []
+    )
+    return [_gallery_entry(row) for row in rows if _has_proof(row)]
+
+
+@router.patch("/{event_id}/proof-images")
+def set_proof_images(
+    event_id: str,
+    body: CleanupProofImagesUpdate,
+    user: AuthUser = Depends(require_roles(*GALLERY_UPLOAD_ROLES)),
+):
+    sb = get_supabase()
+    existing = sb.table("cleanup_events").select("id,before_photo_url,after_photo_url").eq("id", event_id).single().execute().data
+    if not existing:
+        raise HTTPException(404, "Cleanup event not found")
+
+    updates: dict = {}
+    payload = body.model_dump(exclude_unset=True)
+    if "before_image_url" in payload:
+        updates["before_photo_url"] = payload["before_image_url"]
+    if "after_image_url" in payload:
+        updates["after_photo_url"] = payload["after_image_url"]
+    if not updates:
+        raise HTTPException(400, "No image URLs provided")
+
+    before = (updates.get("before_photo_url") or existing.get("before_photo_url") or "").strip()
+    after = (updates.get("after_photo_url") or existing.get("after_photo_url") or "").strip()
+    if before and after:
+        updates["completed_at"] = "now()"
+
+    sb.table("cleanup_events").update(updates).eq("id", event_id).execute()
+    log_audit(user.id, "set_cleanup_proof_images", "cleanup_event", event_id, updates)
+    row = sb.table("cleanup_events").select("*").eq("id", event_id).single().execute().data
+    return {
+        "id": row["id"],
+        "before_image_url": row.get("before_photo_url"),
+        "after_image_url": row.get("after_photo_url"),
+        "completed_at": row.get("completed_at"),
+    }
 
 
 @router.get("/{event_id}")
