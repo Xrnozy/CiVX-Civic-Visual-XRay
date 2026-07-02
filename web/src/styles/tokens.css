@@ -92,6 +92,115 @@ a {
   min-height: var(--subnav-height);
 }
 
+.map-sub-nav {
+  @apply sticky z-40 border-b border-black/[0.06] bg-canvas-parchment/90 backdrop-blur-xl;
+  top: var(--nav-height);
+}
+
+.map-controls-overlay {
+  @apply pointer-events-none absolute inset-x-0 top-0 z-20 p-3 sm:p-4;
+}
+
+.map-top-bar {
+  display: grid;
+  width: 100%;
+  gap: 10px 12px;
+  align-items: center;
+  grid-template-columns: 1fr auto;
+  grid-template-areas:
+    'title action'
+    'filters filters';
+}
+
+@media (min-width: 900px) {
+  .map-top-bar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas: 'title filters action';
+  }
+}
+
+.map-top-bar-title {
+  grid-area: title;
+  min-width: 0;
+}
+
+.map-top-bar-filters {
+  grid-area: filters;
+  min-width: 0;
+}
+
+.map-top-bar-action {
+  grid-area: action;
+  align-self: start;
+}
+
+@media (min-width: 900px) {
+  .map-top-bar-action {
+    align-self: center;
+  }
+}
+
+.map-title-overlay {
+  @apply w-full;
+}
+
+.map-title-text-block {
+  display: inline-block;
+  max-width: min(100%, 20rem);
+  padding: 8px 12px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.58);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
+}
+
+@media (min-width: 900px) {
+  .map-title-text-block {
+    max-width: 14rem;
+  }
+
+  .map-sub-nav-lead {
+    display: none;
+  }
+}
+
+.map-sub-nav-title {
+  @apply text-[18px] font-bold tracking-[-0.01em] text-white sm:text-[20px];
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.map-sub-nav-lead {
+  @apply mt-0.5 max-w-2xl text-xs font-medium leading-snug text-white/95 sm:text-sm;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+}
+
+.map-top-action {
+  @apply inline-flex no-underline shadow-product;
+}
+
+.map-sub-nav-action {
+  @apply no-underline;
+}
+
+.map-filter-bar-inner {
+  @apply flex flex-wrap items-center gap-2 sm:gap-2.5;
+}
+
+.map-filter-select {
+  @apply min-h-0 py-2 pl-4 pr-9 text-[13px];
+  min-height: 38px;
+}
+
+.map-filter-count {
+  @apply ml-auto rounded-full border border-hairline bg-canvas/95 px-3 py-1.5 text-xs font-medium text-ink-muted-80 backdrop-blur-sm;
+}
+
+@media (max-width: 639px) {
+  .map-filter-count {
+    @apply ml-0 w-full text-center;
+  }
+}
+
 .section-eyebrow {
   @apply text-xs font-semibold uppercase tracking-[0.2em] text-primary;
 }
