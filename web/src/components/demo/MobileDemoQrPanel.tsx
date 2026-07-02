@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
-
-const PRODUCTION_MOBILE_DEMO = 'https://civx.xrnozy.me/mobile';
+import { mobileDemoUrlForSession, resolveMobileDemoSessionUrl } from '../../mobile/mobileDemoUrl';
 
 interface SessionResponse {
   token: string;
@@ -12,18 +11,6 @@ interface SessionResponse {
 interface Props {
   open: boolean;
   onClose: () => void;
-}
-
-function mobileDemoBaseUrl(): string {
-  const envUrl = import.meta.env.VITE_MOBILE_DEMO_URL as string | undefined;
-  if (envUrl?.trim()) return envUrl.trim().replace(/\/$/, '');
-  if (typeof window !== 'undefined') {
-    const host = window.location.hostname;
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return `${window.location.origin}/mobile`;
-    }
-  }
-  return PRODUCTION_MOBILE_DEMO;
 }
 
 function parseApiError(text: string): string {
@@ -43,7 +30,7 @@ function createClientSession(): SessionResponse {
       : `demo${Date.now().toString(36)}`;
   return {
     token,
-    url: `${mobileDemoBaseUrl()}?session=${encodeURIComponent(token)}`,
+    url: mobileDemoUrlForSession(token),
   };
 }
 
@@ -56,7 +43,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
   const [offlineMode, setOfflineMode] = useState(false);
 
   async function applySession(data: SessionResponse, isOffline = false) {
-    const url = data.url || `${mobileDemoBaseUrl()}?session=${encodeURIComponent(data.token)}`;
+    const url = resolveMobileDemoSessionUrl(data.token, data.url);
     setSessionUrl(url);
     setSessionToken(data.token);
     setOfflineMode(isOffline);
@@ -80,7 +67,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
       if (res.status === 404 || res.status === 502 || res.status === 503) {
         await applySession(createClientSession(), true);
         setError(
-          'API session route unavailable — showing a local demo link. Restart the backend API to enable full demo sync.',
+          'API session route unavailable. Showing a standalone demo link; restart the backend API to enable full demo sync.',
         );
         return;
       }
@@ -90,8 +77,8 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
         await applySession(createClientSession(), true);
         setError(
           e instanceof Error
-            ? `${e.message}. Using a local demo link — restart the CiVX API if reports should sync to LGU.`
-            : 'Using a local demo link.',
+            ? `${e.message}. Using a standalone demo link; restart the CiVX API if reports should sync to LGU.`
+            : 'Using a standalone demo link.',
         );
       } catch {
         setError(e instanceof Error ? e.message : 'Could not create demo session');
@@ -137,7 +124,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
 
         <div className="mobile-demo-qr-body">
           <p className="mobile-demo-qr-lead">
-            Scan with your phone camera to open the CiVX mobile experience on your device.
+            Scan with your phone camera to open the CiVX demo app on your mobile device.
           </p>
 
           <div className="mobile-demo-qr-frame">
@@ -151,7 +138,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
           </div>
 
           {offlineMode ? (
-            <p className="text-xs text-amber-700">Local demo link (limited sync until API is restarted)</p>
+            <p className="text-xs text-amber-700">Standalone demo link (limited sync until API is restarted)</p>
           ) : null}
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 

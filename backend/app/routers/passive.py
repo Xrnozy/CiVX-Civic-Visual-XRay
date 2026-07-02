@@ -1,4 +1,5 @@
 import json
+import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
@@ -238,10 +239,8 @@ async def upload_chunk(
     video: UploadFile = File(...),
     user: AuthUser = Depends(get_current_user),
 ):
-    import json
-
     sb = get_supabase()
-    _session_owned(sb, session_id, user.id)
+    session = _session_owned(sb, session_id, user.id)
     content = await video.read()
     content_type = video.content_type or "video/mp4"
     extension = "webm" if content_type == "video/webm" else "mp4"
@@ -254,7 +253,7 @@ async def upload_chunk(
 
     chunk = sb.table("video_chunks").insert({
         "route_session_id": session_id,
-        "storage_url": "",
+        "storage_url": url,
         "chunk_index": chunk_index,
         "start_time": start_time,
         "end_time": end_time,
@@ -270,9 +269,9 @@ async def upload_chunk(
         content,
         lat=lat,
         lng=lng,
-        device_id=device_id,
+        device_id=device_id or session.get("device_id"),
         user_id=user.id,
-        capture_mode="passive_camera",
+        capture_mode="driver_camera" if session.get("mode") == "driver" else "passive_camera",
         route_session_id=session_id,
         video_chunk_id=chunk["id"],
         gps_trace_json=trace,

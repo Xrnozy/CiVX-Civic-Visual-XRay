@@ -1,14 +1,33 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
 import { ensureDemoSession } from './demoSession';
+import {
+  mdiCalendar,
+  mdiCalendarOutline,
+  mdiCamera,
+  mdiHome,
+  mdiHomeOutline,
+  mdiLeaf,
+  mdiLeafCircleOutline,
+  mdiMap,
+  mdiMapOutline,
+} from '@mdi/js';
 
 const tabs = [
-  { to: '/mobile', label: 'Home', end: true },
-  { to: '/mobile/events', label: 'Events' },
-  { to: '/mobile/camera', label: 'Camera' },
-  { to: '/mobile/map', label: 'Map' },
-  { to: '/mobile/ecoquest', label: 'EcoQuest' },
+  { to: '/mobile', label: 'Home', icon: mdiHomeOutline, activeIcon: mdiHome, end: true },
+  { to: '/mobile/events', label: 'Events', icon: mdiCalendarOutline, activeIcon: mdiCalendar },
+  { to: '/mobile/camera', label: 'Camera', icon: mdiCamera, activeIcon: mdiCamera, center: true },
+  { to: '/mobile/map', label: 'Map', icon: mdiMapOutline, activeIcon: mdiMap },
+  { to: '/mobile/ecoquest', label: 'EcoQuest', icon: mdiLeafCircleOutline, activeIcon: mdiLeaf },
 ];
+
+function MobileTabIcon({ path, size = 24 }: { path: string; size?: number }) {
+  return (
+    <svg className="mobile-tab-icon" width={size} height={size} viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      <path d={path} fill="currentColor" />
+    </svg>
+  );
+}
 
 export function MobileDemoLayout() {
   const location = useLocation();
@@ -31,15 +50,6 @@ export function MobileDemoLayout() {
 
   return (
     <div className="mobile-demo-root">
-      <header className="mobile-demo-header">
-        <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">CiVX Mobile</p>
-          <p className="text-sm font-semibold text-ink">Demo</p>
-        </div>
-        <NavLink to="/mobile/account" className="text-xs font-medium text-primary">
-          Account
-        </NavLink>
-      </header>
       <main className="mobile-demo-main">
         <Outlet />
       </main>
@@ -49,11 +59,22 @@ export function MobileDemoLayout() {
             key={tab.to}
             to={tab.to}
             end={tab.end}
-            className={({ isActive }) =>
-              `mobile-tab-link ${isActive || (tab.to !== '/mobile' && location.pathname.startsWith(tab.to)) ? 'mobile-tab-link-active' : ''}`
-            }
+            className={({ isActive }) => {
+              const active = isActive || (tab.to !== '/mobile' && location.pathname.startsWith(tab.to));
+              return `mobile-tab-link ${tab.center ? 'mobile-tab-link-center' : ''} ${active ? 'mobile-tab-link-active' : ''}`;
+            }}
           >
-            <span>{tab.label}</span>
+            {({ isActive }) => {
+              const active = isActive || (tab.to !== '/mobile' && location.pathname.startsWith(tab.to));
+              return (
+                <>
+                  <span className={tab.center ? 'mobile-tab-center-button' : undefined}>
+                    <MobileTabIcon path={active ? tab.activeIcon : tab.icon} size={tab.center ? 26 : 24} />
+                  </span>
+                  <span>{tab.label}</span>
+                </>
+              );
+            }}
           </NavLink>
         ))}
       </nav>

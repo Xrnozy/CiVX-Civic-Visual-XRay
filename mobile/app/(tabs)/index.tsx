@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { Link, usePathname } from 'expo-router';
+import { router, usePathname } from 'expo-router';
 import { useFocusEffect } from '@react-navigation/native';
 import { api } from '../../lib/api';
 import { colors, productShadow, radii, type } from '../../styles/theme';
@@ -58,16 +58,12 @@ export default function HomeScreen() {
         </Text>
 
         <View style={styles.buttonRow}>
-          <Link href="/report" asChild>
-            <TouchableOpacity style={styles.buttonPrimary}>
-              <Text style={styles.buttonPrimaryText}>Report issue</Text>
-            </TouchableOpacity>
-          </Link>
-          <Link href="/map" asChild>
-            <TouchableOpacity style={styles.buttonSecondary}>
-              <Text style={styles.buttonSecondaryText}>Explore map</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity style={styles.buttonPrimary} onPress={() => router.push('/report')}>
+            <Text style={styles.buttonPrimaryText}>Report issue</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.buttonSecondary} onPress={() => router.push('/map')}>
+            <Text style={styles.buttonSecondaryText}>Explore map</Text>
+          </TouchableOpacity>
         </View>
 
         <View style={styles.statRow}>
@@ -106,12 +102,14 @@ export default function HomeScreen() {
           {quickActions.map((action) => {
             const active = pathname === action.href;
             return (
-              <Link key={action.href} href={action.href as never} asChild>
-                <TouchableOpacity style={[styles.actionCard, active && styles.actionCardActive]}>
-                  <Text style={[styles.actionLabel, active && styles.actionLabelActive]}>{action.label}</Text>
-                  <Text style={[styles.actionCaption, active && styles.actionCaptionActive]}>{action.caption}</Text>
-                </TouchableOpacity>
-              </Link>
+              <TouchableOpacity
+                key={action.href}
+                style={[styles.actionCard, active && styles.actionCardActive]}
+                onPress={() => router.push(action.href as never)}
+              >
+                <Text style={[styles.actionLabel, active && styles.actionLabelActive]}>{action.label}</Text>
+                <Text style={[styles.actionCaption, active && styles.actionCaptionActive]}>{action.caption}</Text>
+              </TouchableOpacity>
             );
           })}
         </View>
