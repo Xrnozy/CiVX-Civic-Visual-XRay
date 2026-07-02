@@ -29,4 +29,16 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'unsafe-none',
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          firebase: ['firebase/app', 'firebase/auth'],
+          maps: ['@googlemaps/js-api-loader', '@googlemaps/markerclusterer'],
+          charts: ['recharts'],
+          qr: ['html5-qrcode', 'qrcode'],
+        },
+      },
+    },
+  },
 });

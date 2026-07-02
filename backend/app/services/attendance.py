@@ -170,6 +170,127 @@ def fetch_registrations(event_id: str) -> dict[str, dict[str, Any]]:
     return {r["user_id"]: r for r in rows}
 
 
+PHOTO_UPLOAD_STATUSES = frozenset({"checked-in", "checked-out", "verified"})
+
+
+def attendee_status_for_record(record: dict[str, Any]) -> str:
+    return status_to_api(record.get("lgu_status") or record.get("organizer_status"))
+
+
+def public_going_count(event_id: str) -> int:
+    records = fetch_event_records(event_id)
+    return sum(1 for rec in records if attendee_status_for_record(rec) != "rejected")
+
+
+def public_participant_names(event_id: str) -> list[dict[str, Any]]:
+    records = fetch_event_records(event_id)
+    registrations = fetch_registrations(event_id)
+    participants: list[dict[str, Any]] = []
+    for rec in records:
+        if attendee_status_for_record(rec) == "rejected":
+            continue
+        reg = registrations.get(rec["user_id"], {})
+        participants.append(
+            {
+                "user_id": rec["user_id"],
+                "full_name": reg.get("full_name") or "Volunteer",
+            }
+        )
+    participants.sort(key=lambda row: row.get("full_name", ""))
+    return participants
+
+
+def can_upload_event_photo(event_id: str, user_id: str) -> bool:
+    event = get_event(event_id)
+    if event.get("organizer_user_id") == user_id:
+        return True
+    sb = get_supabase()
+    rows = (
+        sb.table("attendance_records")
+        .select("organizer_status,lgu_status")
+        .eq("event_id", event_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return False
+    return attendee_status_for_record(rows[0]) in PHOTO_UPLOAD_STATUSES
+
+
+def can_moderate_event_photos(user: AuthUser, event: dict[str, Any]) -> bool:
+    if user.role in LGU_ROLES:
+        return True
+    return user.role == "organizer" and event.get("organizer_user_id") == user.id
+
+
+def fetch_organizer_display_name(organizer_user_id: str | None) -> str:
+    if not organizer_user_id:
+        return "Community organizer"
+    sb = get_supabase()
+    rows = (
+        sb.table("users")
+        .select("full_name,organization_name")
+        .eq("id", organizer_user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return "Community organizer"
+    user = rows[0]
+    name = (user.get("organization_name") or user.get("full_name") or "Community organizer").strip()
+    return name or "Community organizer"
+
+
+def fetch_organizer_profile_photo(organizer_user_id: str | None) -> str | None:
+    if not organizer_user_id:
+        return None
+    sb = get_supabase()
+    rows = (
+        sb.table("users")
+        .select("profile_photo_url")
+        .eq("id", organizer_user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return None
+    return rows[0].get("profile_photo_url")
+
+
+def volunteer_event_status(event_id: str, user_id: str) -> dict[str, Any]:
+    sb = get_supabase()
+    rows = (
+        sb.table("attendance_records")
+        .select("organizer_status,lgu_status")
+        .eq("event_id", event_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return {"registered": False}
+    record = rows[0]
+    status = status_to_api(record.get("lgu_status") or record.get("organizer_status"))
+    return {"registered": True, "status": status}
+
+
+def fetch_user_emails(user_ids: list[str]) -> dict[str, str | None]:
+    if not user_ids:
+        return {}
+    sb = get_supabase()
+    rows = sb.table("users").select("id, email").in_("id", user_ids).execute().data or []
+    return {row["id"]: row.get("email") for row in rows}
+
+
 def list_monitor_events(user: AuthUser, approved_only: bool = True) -> list[dict[str, Any]]:
     sb = get_supabase()
     q = sb.table("cleanup_events").select(

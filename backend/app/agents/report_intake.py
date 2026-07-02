@@ -7,6 +7,7 @@ from typing import Any
 from app.agents.ai_detection import AIDetectionAgent
 from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.agents.lgu_triage import LGUTriageAgent
+from app.config import settings
 from app.db import get_supabase
 
 
@@ -26,8 +27,9 @@ class ReportIntakeAgent:
         issue_type: str | None = None,
         barangay: str | None = None,
         photo_url: str | None = None,
+        photo_urls: list[str] | None = None,
     ) -> dict[str, Any]:
-        if not photo_payloads and not photo_url:
+        if not photo_payloads and not photo_url and not photo_urls:
             raise ValueError("Photo is required")
         if latitude is None or longitude is None:
             raise ValueError("GPS location is required")
@@ -35,6 +37,9 @@ class ReportIntakeAgent:
         local_paths: list[str] = []
         uploaded_photo_urls: list[str] = []
         detection = None
+
+        if photo_urls:
+            uploaded_photo_urls = [url for url in photo_urls if url]
 
         for index, payload in enumerate(photo_payloads):
             photo_bytes = payload.get("bytes") or b""
@@ -53,15 +58,21 @@ class ReportIntakeAgent:
 
             uploaded_photo_urls.append(self._upload_photo(local_path, user_id, str(filename)))
 
-        if not photo_url and uploaded_photo_urls:
+        if uploaded_photo_urls and not photo_url:
             photo_url = uploaded_photo_urls[0]
         if photo_url and not uploaded_photo_urls:
             uploaded_photo_urls = [photo_url]
+        if photo_url and uploaded_photo_urls and uploaded_photo_urls[0] != photo_url:
+            uploaded_photo_urls = [photo_url, *[url for url in uploaded_photo_urls if url != photo_url]]
+        if photo_url and photo_url not in uploaded_photo_urls:
+            uploaded_photo_urls.insert(0, photo_url)
 
         final_issue = issue_type or (detection.issue_type if detection else "garbage_pile")
         ai_conf = detection.confidence if detection else 0.3
         severity = detection.severity_score if detection else 1.5
         bbox = detection.bounding_box if detection else None
+
+        address_text = barangay.strip() if barangay and barangay.strip() else None
 
         sb = get_supabase()
         report_row = sb.table("reports").insert({
@@ -70,7 +81,7 @@ class ReportIntakeAgent:
             "description": description,
             "latitude": latitude,
             "longitude": longitude,
-            "address_text": barangay,
+            "address_text": address_text,
             "photo_url": photo_url or "",
             "photo_urls": uploaded_photo_urls,
             "ai_suggested_type": detection.issue_type if detection else final_issue,
@@ -86,7 +97,7 @@ class ReportIntakeAgent:
             incident_id = rec.incident_id
             merged = True
         else:
-            inc = self.intel.create_incident(final_issue, latitude, longitude, severity, "citizen", barangay)
+            inc = self.intel.create_incident(final_issue, latitude, longitude, severity, "citizen")
             incident_id = inc["id"]
             sb.table("reports").update({"merged_incident_id": incident_id}).eq("id", report_row["id"]).execute()
             merged = False
@@ -111,7 +122,7 @@ class ReportIntakeAgent:
 
     def _upload_photo(self, local_path: str, user_id: str, filename: str | None = None) -> str:
         sb = get_supabase()
-        bucket = "report-photos"
+        bucket = settings.supabase_report_photos_bucket
         suffix = Path(filename).suffix if filename else ".jpg"
         key = f"{user_id}/{uuid.uuid4().hex}{suffix or '.jpg'}"
         with open(local_path, "rb") as f:

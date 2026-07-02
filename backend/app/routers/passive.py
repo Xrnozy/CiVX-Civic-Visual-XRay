@@ -1,10 +1,13 @@
-import uuid
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, UploadFile
+import json
 
-from app.agents.passive_video import PassiveVideoAgent
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+
 from app.auth.firebase import AuthUser, get_current_user, require_roles
 from app.db import get_supabase
 from app.models.schemas import RouteSessionCreate
+from app.services.clip_enqueue import enqueue_clip
+from app.services.queue_mode import queue_status_payload
+from app.services.redis_queue import stream_lengths
 
 router = APIRouter(prefix="/api/passive", tags=["passive"])
 
@@ -218,14 +221,20 @@ def end_session(session_id: str, user: AuthUser = Depends(get_current_user)):
     return {"status": "completed"}
 
 
+@router.get("/queue/status")
+def queue_status(user: AuthUser = Depends(require_roles(*WORKER_READ))):
+    """Redis pipeline queue depth."""
+    return queue_status_payload(stream_lengths())
+
+
 @router.post("/sessions/{session_id}/chunks")
 async def upload_chunk(
     session_id: str,
-    background_tasks: BackgroundTasks,
     chunk_index: int = Form(...),
     start_time: str = Form(...),
     end_time: str = Form(...),
     gps_trace_json: str = Form("[]"),
+    device_id: str | None = Form(None),
     video: UploadFile = File(...),
     user: AuthUser = Depends(get_current_user),
 ):
@@ -234,31 +243,45 @@ async def upload_chunk(
     sb = get_supabase()
     _session_owned(sb, session_id, user.id)
     content = await video.read()
-    key = f"{session_id}/{uuid.uuid4().hex}.mp4"
-    sb.storage.from_("video-chunks").upload(key, content, {"content-type": "video/mp4"})
+    content_type = video.content_type or "video/mp4"
+    extension = "webm" if content_type == "video/webm" else "mp4"
+    key = f"{session_id}/{uuid.uuid4().hex}.{extension}"
+    sb.storage.from_("video-chunks").upload(key, content, {"content-type": content_type})
     url = sb.storage.from_("video-chunks").get_public_url(key)
     trace = json.loads(gps_trace_json) if gps_trace_json else []
+    lat = trace[-1]["lat"] if trace else None
+    lng = trace[-1]["lng"] if trace else None
+
     chunk = sb.table("video_chunks").insert({
         "route_session_id": session_id,
-        "storage_url": url,
+        "storage_url": "",
         "chunk_index": chunk_index,
         "start_time": start_time,
         "end_time": end_time,
         "gps_trace_json": trace,
         "processing_status": "pending",
     }).execute().data[0]
+
     sb.table("passive_route_sessions").update({
         "total_chunks": chunk_index + 1,
     }).eq("id", session_id).execute()
-    background_tasks.add_task(_process_chunk, chunk["id"])
-    return chunk
 
+    result = enqueue_clip(
+        content,
+        lat=lat,
+        lng=lng,
+        device_id=device_id,
+        user_id=user.id,
+        capture_mode="passive_camera",
+        route_session_id=session_id,
+        video_chunk_id=chunk["id"],
+        gps_trace_json=trace,
+        skip_session_check=True,
+    )
 
-def _process_chunk(chunk_id: str):
-    from app.db import get_supabase
+    sb.table("video_chunks").update({
+        "processing_status": "processing",
+    }).eq("id", chunk["id"]).execute()
 
-    try:
-        PassiveVideoAgent().process_chunk(chunk_id)
-    except Exception:
-        sb = get_supabase()
-        sb.table("video_chunks").update({"processing_status": "failed"}).eq("id", chunk_id).execute()
+    return {**chunk, "job_id": result["job_id"], "pipeline": result}
+

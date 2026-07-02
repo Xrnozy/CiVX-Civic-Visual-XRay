@@ -1,24 +1,42 @@
 import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
 
-// In dev, use Vite proxy (/api → localhost:8000). In production, use VITE_API_URL.
-const API_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || '');
+// Relative /api when unset — works with Vite dev proxy and Caddy same-origin in production.
+const API_URL = import.meta.env.VITE_API_URL || '';
 
-async function resolveAuthToken(): Promise<string | null> {
+let cachedToken: string | null = null;
+let cachedTokenExpiry = 0;
+
+export async function resolveAuthToken(forceRefresh = false): Promise<string | null> {
+  if (!forceRefresh && cachedToken && Date.now() < cachedTokenExpiry) {
+    return cachedToken;
+  }
+
   if (isFirebaseConfigured) {
     const auth = getFirebaseAuth();
     await auth.authStateReady();
     const user = auth.currentUser;
     if (user) {
-      const token = await user.getIdToken();
+      const token = await user.getIdToken(forceRefresh);
+      cachedToken = token;
+      cachedTokenExpiry = Date.now() + 50_000;
       localStorage.setItem('civx_token', token);
       return token;
     }
   }
-  return localStorage.getItem('civx_token');
+
+  cachedToken = localStorage.getItem('civx_token');
+  if (cachedToken) {
+    cachedTokenExpiry = Date.now() + 50_000;
+  }
+  return cachedToken;
 }
 
-export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const token = await resolveAuthToken();
+export function clearAuthTokenCache(): void {
+  cachedToken = null;
+  cachedTokenExpiry = 0;
+}
+
+async function fetchWithAuth<T>(path: string, options: RequestInit, token: string | null): Promise<Response> {
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
@@ -26,9 +44,21 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
   if (!(options.body instanceof FormData)) {
     headers['Content-Type'] = headers['Content-Type'] || 'application/json';
   }
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  return fetch(`${API_URL}${path}`, { ...options, headers });
+}
+
+export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
+  let token = await resolveAuthToken();
+  let res = await fetchWithAuth(path, options, token);
+
+  if (res.status === 401 && isFirebaseConfigured) {
+    token = await resolveAuthToken(true);
+    res = await fetchWithAuth(path, options, token);
+  }
+
   if (!res.ok) {
-    throw new Error(await res.text());
+    const errBody = await res.text();
+    throw new Error(errBody);
   }
   return res.json();
 }

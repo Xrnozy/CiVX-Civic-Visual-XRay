@@ -1,6 +1,8 @@
 import os
+import json
+import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from pathlib import Path
 
 import firebase_admin
 from firebase_admin import auth, credentials
@@ -13,6 +15,23 @@ from app.db import get_supabase
 security = HTTPBearer(auto_error=False)
 
 _firebase_initialized = False
+_DEBUG_LOG = Path(__file__).resolve().parents[3] / "debug-76c51b.log"
+
+
+def _agent_log(location: str, message: str, data: dict, hypothesis_id: str) -> None:
+    try:
+        payload = {
+            "sessionId": "76c51b",
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+            "hypothesisId": hypothesis_id,
+        }
+        with _DEBUG_LOG.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload) + "\n")
+    except Exception:
+        pass
 
 
 def init_firebase() -> None:
@@ -57,6 +76,7 @@ async def get_current_user(
     result = sb.table("users").select("*").eq("firebase_uid", firebase_uid).limit(1).execute()
     if result.data:
         row = result.data[0]
+        _agent_log("firebase.py:get_current_user", "found existing user", {"userId": row.get("id")}, "H1")
         role = row.get("role", "citizen")
         if settings.demo_lgu_auto_role and role == "citizen":
             sb.table("users").update({"role": "lgu_staff"}).eq("id", row["id"]).execute()
@@ -71,13 +91,19 @@ async def get_current_user(
         )
 
     default_role = "lgu_staff" if settings.demo_lgu_auto_role else "citizen"
-    insert = sb.table("users").insert({
-        "firebase_uid": firebase_uid,
-        "email": email,
-        "full_name": name,
-        "role": default_role,
-    }).execute()
-    row = insert.data[0]
+    _agent_log("firebase.py:get_current_user", "inserting new user", {"firebase_uid": firebase_uid, "role": default_role}, "H1")
+    try:
+        insert = sb.table("users").insert({
+            "firebase_uid": firebase_uid,
+            "email": email,
+            "full_name": name,
+            "role": default_role,
+        }).execute()
+        row = insert.data[0]
+        _agent_log("firebase.py:get_current_user", "insert ok", {"userId": row.get("id")}, "H1")
+    except Exception as exc:
+        _agent_log("firebase.py:get_current_user", "insert failed", {"error": str(exc)[:300]}, "H1")
+        raise
     return AuthUser(
         id=row["id"],
         firebase_uid=firebase_uid,

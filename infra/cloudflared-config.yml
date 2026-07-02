@@ -4,12 +4,12 @@
 # 1. cloudflared tunnel login
 # 2. cloudflared tunnel create civx
 # 3. cloudflared tunnel route dns civx civx.xrnozy.me
-# 4. cloudflared tunnel run --config infra/cloudflared-config.yml civx
+# 4. infra\run-tunnel.bat
 
-tunnel: civx
-credentials-file: C:\Users\MY PC\.cloudflared\civx.json
+tunnel: 85995d71-39d2-4aef-a98b-0c9c06e22dfd
+credentials-file: C:\Users\MY PC\.cloudflared\85995d71-39d2-4aef-a98b-0c9c06e22dfd.json
 
 ingress:
   - hostname: civx.xrnozy.me
-    service: http://localhost:80
+    service: http://127.0.0.1:80
   - service: http_status:404

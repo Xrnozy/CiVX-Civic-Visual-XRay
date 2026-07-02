@@ -2,6 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, UploadFile, File
 
 from app.auth.firebase import AuthUser, get_current_user
+from app.config import settings
 from app.db import get_supabase
 
 router = APIRouter(prefix="/api/media", tags=["media"])
@@ -9,10 +10,11 @@ router = APIRouter(prefix="/api/media", tags=["media"])
 
 @router.post("/upload")
 async def upload_media(
-    bucket: str = "report-photos",
+    bucket: str | None = None,
     file: UploadFile = File(...),
     user: AuthUser = Depends(get_current_user),
 ):
+    bucket = bucket or settings.supabase_report_photos_bucket
     allowed = {"image/jpeg", "image/png", "image/webp", "video/mp4"}
     if file.content_type not in allowed:
         from fastapi import HTTPException

@@ -1,64 +1,74 @@
+import { Suspense, lazy } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import { RegistrationGate } from './components/auth/RegistrationGate';
+import { PageLoader } from './components/ui/PageLoader';
 import HomePage from './pages/HomePage';
-import MapPage from './pages/MapPage';
-import EventsPage from './pages/EventsPage';
-import GalleryPage from './pages/GalleryPage';
-import TransparencyPage from './pages/TransparencyPage';
-import ReportPage from './pages/ReportPage';
 import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import CompleteRegistrationPage from './pages/CompleteRegistrationPage';
-import StreetSweeperWelcomePage from './pages/StreetSweeperWelcomePage';
-import { LGULayout } from './pages/lgu/LGULayout';
-import LGUDashboard from './pages/lgu/LGUDashboard';
-import LGUQueuePage from './pages/lgu/LGUQueuePage';
-import LGUMapPage from './pages/lgu/LGUMapPage';
-import LGUCleanupPage from './pages/lgu/LGUCleanupPage';
-import LGUAttendancePage from './pages/lgu/LGUAttendancePage';
-import LGUEcoQuestPage from './pages/lgu/LGUEcoQuestPage';
-import LGUAnalyticsPage from './pages/lgu/LGUAnalyticsPage';
-import LGUWorkerInvitesPage from './pages/lgu/LGUWorkerInvitesPage';
-import LGUStaffPage from './pages/lgu/LGUStaffPage';
-import { OrganizerLayout } from './pages/organizer/OrganizerLayout';
-import OrganizerCleanupPage from './pages/organizer/OrganizerCleanupPage';
-import { WorkerLayout } from './pages/worker/WorkerLayout';
-import WorkerDashboard from './pages/worker/WorkerDashboard';
-import WorkerShiftsPage from './pages/worker/WorkerShiftsPage';
+
+const MapPage = lazy(() => import('./pages/MapPage'));
+const EventsPage = lazy(() => import('./pages/EventsPage'));
+const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
+const LazyGalleryPage = lazy(() => import('./pages/GalleryPage'));
+const TransparencyPage = lazy(() => import('./pages/TransparencyPage'));
+const ReportPage = lazy(() => import('./pages/ReportPage'));
+const RegisterPage = lazy(() => import('./pages/RegisterPage'));
+const CompleteRegistrationPage = lazy(() => import('./pages/CompleteRegistrationPage'));
+const StreetSweeperWelcomePage = lazy(() => import('./pages/StreetSweeperWelcomePage'));
+const AnalyzerTestPage = lazy(() => import('./pages/AnalyzerTestPage'));
+const LGULayout = lazy(() => import('./pages/lgu/LGULayout').then((m) => ({ default: m.LGULayout })));
+const LGUDashboard = lazy(() => import('./pages/lgu/LGUDashboard'));
+const LGUQueuePage = lazy(() => import('./pages/lgu/LGUQueuePage'));
+const LGUMapPage = lazy(() => import('./pages/lgu/LGUMapPage'));
+const LGUCleanupPage = lazy(() => import('./pages/lgu/LGUCleanupPage'));
+const LGUAttendancePage = lazy(() => import('./pages/lgu/LGUAttendancePage'));
+const LGUEcoQuestPage = lazy(() => import('./pages/lgu/LGUEcoQuestPage'));
+const LGUAnalyticsPage = lazy(() => import('./pages/lgu/LGUAnalyticsPage'));
+const LGUWorkerInvitesPage = lazy(() => import('./pages/lgu/LGUWorkerInvitesPage'));
+const LGUStaffPage = lazy(() => import('./pages/lgu/LGUStaffPage'));
+const OrganizerLayout = lazy(() => import('./pages/organizer/OrganizerLayout').then((m) => ({ default: m.OrganizerLayout })));
+const OrganizerCleanupPage = lazy(() => import('./pages/organizer/OrganizerCleanupPage'));
+const WorkerLayout = lazy(() => import('./pages/worker/WorkerLayout').then((m) => ({ default: m.WorkerLayout })));
+const WorkerDashboard = lazy(() => import('./pages/worker/WorkerDashboard'));
+const WorkerShiftsPage = lazy(() => import('./pages/worker/WorkerShiftsPage'));
 
 export default function App() {
   return (
     <RegistrationGate>
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/map" element={<MapPage />} />
-        <Route path="/events" element={<EventsPage />} />
-        <Route path="/report" element={<ReportPage />} />
-        <Route path="/gallery" element={<GalleryPage />} />
-        <Route path="/transparency" element={<TransparencyPage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
-        <Route path="/register/complete" element={<CompleteRegistrationPage />} />
-        <Route path="/street-sweeper/welcome" element={<StreetSweeperWelcomePage />} />
-        <Route path="/lgu" element={<LGULayout />}>
-          <Route index element={<LGUDashboard />} />
-          <Route path="queue" element={<LGUQueuePage />} />
-          <Route path="map" element={<LGUMapPage />} />
-          <Route path="cleanup" element={<LGUCleanupPage />} />
-          <Route path="worker-invites" element={<LGUWorkerInvitesPage />} />
-          <Route path="staff" element={<LGUStaffPage />} />
-          <Route path="attendance" element={<LGUAttendancePage />} />
-          <Route path="ecoquest" element={<LGUEcoQuestPage />} />
-          <Route path="analytics" element={<LGUAnalyticsPage />} />
-        </Route>
-        <Route path="/organizer" element={<OrganizerLayout />}>
-          <Route index element={<OrganizerCleanupPage />} />
-        </Route>
-        <Route path="/worker" element={<WorkerLayout />}>
-          <Route index element={<WorkerDashboard />} />
-          <Route path="shifts" element={<WorkerShiftsPage />} />
-        </Route>
-      </Routes>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/map" element={<MapPage />} />
+          <Route path="/events/:eventId" element={<EventDetailPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/report" element={<ReportPage />} />
+          <Route path="/analyzer" element={<AnalyzerTestPage />} />
+          <Route path="/analyzer/test" element={<AnalyzerTestPage />} />
+          <Route path="/gallery" element={<LazyGalleryPage />} />
+          <Route path="/transparency" element={<TransparencyPage />} />
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="/register/complete" element={<CompleteRegistrationPage />} />
+          <Route path="/street-sweeper/welcome" element={<StreetSweeperWelcomePage />} />
+          <Route path="/lgu" element={<LGULayout />}>
+            <Route index element={<LGUDashboard />} />
+            <Route path="queue" element={<LGUQueuePage />} />
+            <Route path="map" element={<LGUMapPage />} />
+            <Route path="cleanup" element={<LGUCleanupPage />} />
+            <Route path="worker-invites" element={<LGUWorkerInvitesPage />} />
+            <Route path="staff" element={<LGUStaffPage />} />
+            <Route path="attendance" element={<LGUAttendancePage />} />
+            <Route path="ecoquest" element={<LGUEcoQuestPage />} />
+            <Route path="analytics" element={<LGUAnalyticsPage />} />
+          </Route>
+          <Route path="/organizer" element={<OrganizerLayout />}>
+            <Route index element={<OrganizerCleanupPage />} />
+          </Route>
+          <Route path="/worker" element={<WorkerLayout />}>
+            <Route index element={<WorkerDashboard />} />
+            <Route path="shifts" element={<WorkerShiftsPage />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </RegistrationGate>
   );
 }

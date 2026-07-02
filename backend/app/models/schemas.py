@@ -8,6 +8,7 @@ class ReportCreate(BaseModel):
     issue_type: str | None = None
     barangay: str | None = None
     photo_url: str | None = None
+    photo_urls: list[str] = Field(default_factory=list)
 
 
 class IncidentUpdate(BaseModel):
@@ -145,3 +146,46 @@ class PassiveDetectionItem(BaseModel):
     matched_longitude: float | None = None
     created_at: str
     session_id: str
+
+
+class AnalyzerBoundingBox(BaseModel):
+    x1: float
+    y1: float
+    x2: float
+    y2: float
+
+
+class AnalyzerDetection(BaseModel):
+    issue_type: str
+    confidence: float
+    severity_score: float
+    bounding_box: AnalyzerBoundingBox
+    bounding_boxes: list[AnalyzerBoundingBox] = []
+    raw_class: str
+    model_answer: str | None = None
+    frame_timestamp: float | None = None
+    matched_latitude: float | None = None
+    matched_longitude: float | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+
+
+class AnalyzerDuplicateHint(BaseModel):
+    action: str
+    duplicate_score: float
+    incident_id: str | None = None
+    reason: str
+
+
+class AnalyzerImageResponse(BaseModel):
+    detection: AnalyzerDetection
+    duplicate_hint: AnalyzerDuplicateHint | None = None
+    image_width: int
+    image_height: int
+
+
+class AnalyzerVideoResponse(BaseModel):
+    detections: list[AnalyzerDetection]
+    frames_analyzed: int
+    frame_timestamps: list[float] = []
+    sample_fps: float = 1.0

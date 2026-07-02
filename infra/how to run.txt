@@ -1,0 +1,53 @@
+Run these in separate terminals from the repo root.
+
+Apply Supabase migrations first:
+- supabase/migrations/004_passive_pipeline.sql
+- supabase/migrations/005_passive_evidence_meta.sql
+
+1. Redis
+infra\run-redis.bat
+
+(Manual: docker start civx-redis — or docker run -d --name civx-redis -p 6379:6379 redis:7-alpine)
+
+2. Backend
+cd backend
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+3. Workers (one command — opens 5 terminals)
+infra\run-workers.bat
+
+Or manually in separate terminals:
+cd backend
+python -m workers.prefilter_worker
+
+cd backend
+python -m workers.yolo_worker
+
+cd backend
+python -m workers.locate_worker
+
+cd backend
+python -m workers.incident_worker
+
+cd backend
+python -m workers.review_worker
+
+4. Build web for Caddy
+cd web
+npm run build
+
+5. Caddy
+infra\run-caddy.bat
+
+6. Cloudflare tunnel
+infra\run-tunnel.bat
+
+--- All-in-one hosting (API + workers + Caddy + tunnel) ---
+infra\run-hosting.bat
+
+Public URL:
+https://civx.xrnozy.me
+
+Local dev only:
+cd web
+npm run dev
