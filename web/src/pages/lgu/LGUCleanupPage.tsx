@@ -6,22 +6,26 @@ import {
   type CleanupEvent,
 } from '../../components/lgu/CleanupEventDetailPanel';
 import { CleanupRejectionReason } from '../../components/lgu/CleanupRejectionReason';
+import { FORM_FIELD_INPUT } from '../../components/map/LocationPickerSection';
 import { api } from '../../lib/api';
-import { formatEventSchedulePhase, schedulePhaseListClass } from '../../lib/eventSchedule';
-
-type StatusFilter = 'pending' | 'approved' | 'rejected' | 'all';
-
-const FILTERS: { id: StatusFilter; label: string }[] = [
-  { id: 'pending', label: 'Pending' },
-  { id: 'approved', label: 'Approved' },
-  { id: 'rejected', label: 'Rejected' },
-  { id: 'all', label: 'All' },
-];
+import {
+  ORGANIZER_DRIVE_FILTERS,
+  ORGANIZER_EVENT_SORT_OPTIONS,
+  filterOrganizerCleanupEvents,
+  formatEventSchedulePhase,
+  getOrganizerDriveListBadge,
+  schedulePhaseListClass,
+  sortOrganizerCleanupEvents,
+  type OrganizerDriveFilter,
+  type OrganizerEventSort,
+} from '../../lib/eventSchedule';
+import { formatLocationAddress } from '../../types/pickedAddress';
 
 export default function LGUCleanupPage() {
   const [events, setEvents] = useState<CleanupEvent[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('pending');
+  const [statusFilter, setStatusFilter] = useState<OrganizerDriveFilter>('pending');
+  const [sortBy, setSortBy] = useState<OrganizerEventSort>('start');
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(() => {
@@ -38,16 +42,21 @@ export default function LGUCleanupPage() {
 
   useEffect(() => {
     setSelectedId((prev) => {
-      const filtered = statusFilter === 'all' ? events : events.filter((e) => e.approval_status === statusFilter);
+      const filtered = filterOrganizerCleanupEvents(events, statusFilter);
       if (prev && filtered.some((e) => e.id === prev)) return prev;
       return filtered[0]?.id ?? null;
     });
   }, [statusFilter, events]);
 
-  const filtered = useMemo(() => {
-    if (statusFilter === 'all') return events;
-    return events.filter((e) => e.approval_status === statusFilter);
-  }, [events, statusFilter]);
+  const filteredEvents = useMemo(
+    () => filterOrganizerCleanupEvents(events, statusFilter),
+    [events, statusFilter],
+  );
+
+  const sortedEvents = useMemo(
+    () => sortOrganizerCleanupEvents(filteredEvents, sortBy),
+    [filteredEvents, sortBy],
+  );
 
   const stats = useMemo(
     () => ({
@@ -58,7 +67,7 @@ export default function LGUCleanupPage() {
     [events],
   );
 
-  const selected = filtered.find((e) => e.id === selectedId) ?? events.find((e) => e.id === selectedId);
+  const selected = sortedEvents.find((e) => e.id === selectedId) ?? events.find((e) => e.id === selectedId);
 
   return (
     <div className="min-h-screen bg-canvas-parchment">
@@ -78,9 +87,34 @@ export default function LGUCleanupPage() {
           <StatCard label="Total drives" value={stats.total} />
         </div>
 
-        <div className="mt-8 flex flex-wrap items-center gap-3">
+        <div className="mt-8 flex flex-wrap items-end justify-between gap-4">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Cleanup drives</h2>
+            <p className="mt-1 text-sm text-ink-muted-48">
+              {filteredEvents.length} of {events.length} drive{events.length === 1 ? '' : 's'}
+            </p>
+          </div>
+          {events.length > 0 ? (
+            <label className="flex flex-col gap-1.5 text-sm">
+              <span className="font-medium text-ink-muted-80">Sort by</span>
+              <select
+                className={`min-w-[180px] ${FORM_FIELD_INPUT}`}
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as OrganizerEventSort)}
+              >
+                {ORGANIZER_EVENT_SORT_OPTIONS.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="flex rounded-full border border-hairline p-1">
-            {FILTERS.map((filter) => (
+            {ORGANIZER_DRIVE_FILTERS.map((filter) => (
               <button
                 key={filter.id}
                 type="button"
@@ -93,22 +127,22 @@ export default function LGUCleanupPage() {
               </button>
             ))}
           </div>
-          <span className="text-sm text-ink-muted-48">{filtered.length} drive{filtered.length === 1 ? '' : 's'}</span>
         </div>
 
         <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_460px]">
           <div className="space-y-3">
-            {loading && filtered.length === 0 && (
+            {loading && sortedEvents.length === 0 && (
               <p className="text-sm text-ink-muted-48">Loading drives…</p>
             )}
-            {!loading && filtered.length === 0 && (
+            {!loading && sortedEvents.length === 0 && (
               <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
                 {statusFilter === 'pending'
                   ? 'No cleanup drives pending review.'
                   : 'No drives match this filter.'}
               </div>
             )}
-            {filtered.map((event) => {
+            {sortedEvents.map((event) => {
+              const listBadge = getOrganizerDriveListBadge(event);
               const schedulePhase =
                 event.approval_status === 'approved'
                   ? formatEventSchedulePhase(event.scheduled_start, event.scheduled_end)
@@ -126,25 +160,30 @@ export default function LGUCleanupPage() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">{event.title}</p>
                     <p className="mt-1 text-sm text-ink-muted-48">
-                      {event.barangay || '—'}
+                      {formatLocationAddress(event) || event.barangay || '—'}
                       {event.scheduled_start ? ` · ${new Date(event.scheduled_start).toLocaleString()}` : ''}
                     </p>
-                    {event.latitude != null && event.longitude != null && (
+                    {event.latitude != null && event.longitude != null && !formatLocationAddress(event) ? (
                       <p className="mt-1 text-xs text-ink-muted-48">
-                        {Number(event.latitude).toFixed(5)}, {Number(event.longitude).toFixed(5)}
+                        Pin: {Number(event.latitude).toFixed(5)}, {Number(event.longitude).toFixed(5)}
                       </p>
-                    )}
+                    ) : null}
                     {event.approval_status === 'rejected' ? (
                       <CleanupRejectionReason reason={event.rejection_reason} compact />
                     ) : null}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
+                    {listBadge ? (
+                      <span className={`rounded-full px-3 py-1 text-xs font-semibold ${listBadge.className}`}>
+                        {listBadge.label}
+                      </span>
+                    ) : null}
                     <span
                       className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${cleanupStatusClass(event.approval_status)}`}
                     >
                       {event.approval_status.replace('_', ' ')}
                     </span>
-                    {schedulePhase ? (
+                    {schedulePhase && !listBadge ? (
                       <span
                         className={`rounded-full px-3 py-1 text-xs font-semibold ${schedulePhaseListClass(schedulePhase.variant)}`}
                       >

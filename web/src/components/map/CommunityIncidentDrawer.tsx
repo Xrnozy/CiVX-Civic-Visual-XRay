@@ -1,4 +1,5 @@
 import { IncidentStatusBadge, formatLabel } from '../lgu/IncidentBadges';
+import type { ReactNode } from 'react';
 
 export interface CommunityIncidentDetail {
   id: string;
@@ -44,6 +45,7 @@ interface Props {
   onClose: () => void;
   overlay?: boolean;
   onOpenGallery?: (images: string[], index: number) => void;
+  footer?: ReactNode;
 }
 
 function asLocalTime(iso?: string): string {
@@ -95,7 +97,7 @@ function submitterLabel(value?: string): string {
   return 'Community member';
 }
 
-export function CommunityIncidentDrawer({ incident, reports, loading, onClose, overlay = false, onOpenGallery }: Props) {
+export function CommunityIncidentDrawer({ incident, reports, loading, onClose, overlay = false, onOpenGallery, footer }: Props) {
   const gallery = allImages(reports);
 
   function openGallery(url: string) {
@@ -265,6 +267,7 @@ export function CommunityIncidentDrawer({ incident, reports, loading, onClose, o
           )}
         </div>
       </div>
+      {footer ? <div className="shrink-0 border-t border-hairline p-4">{footer}</div> : null}
     </aside>
   );
 }

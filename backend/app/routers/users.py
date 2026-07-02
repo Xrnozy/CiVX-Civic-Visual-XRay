@@ -9,6 +9,7 @@ from app.auth.firebase import AuthUser, get_current_user, require_roles
 from app.db import get_supabase
 from app.models.schemas import CompleteRegistration, SetUserRole, UserProfileUpdate
 from app.services import registration_invites as invite_svc
+from app.services.account_deletion import delete_user_account
 from app.utils.audit import log_audit
 
 PUBLIC_WORKER_TYPES = {
@@ -127,7 +128,16 @@ def complete_registration(body: CompleteRegistration, user: AuthUser = Depends(g
     if body.public_worker_type:
         updates["public_worker_type"] = body.public_worker_type.strip()
 
-    sb.table("users").update(updates).eq("id", user.id).execute()
+    try:
+        sb.table("users").update(updates).eq("id", user.id).execute()
+    except Exception as exc:
+        _agent_log(
+            "users.py:complete_registration",
+            "update failed",
+            {"userId": user.id, "error": str(exc)[:300]},
+            "H3",
+        )
+        raise HTTPException(status_code=500, detail="Failed to complete registration") from exc
     if invite_id:
         invite_svc.redeem_invite(invite_id, user.id)
 
@@ -228,3 +238,21 @@ def set_role(user_id: str, body: SetUserRole, admin: AuthUser = Depends(require_
         {"previous_role": target.get("role"), "new_role": body.role, "email": target.get("email")},
     )
     return {"user_id": user_id, "role": body.role}
+
+
+@router.delete("/{user_id}")
+def delete_account(user_id: str, admin: AuthUser = Depends(require_roles("lgu_admin"))):
+    """Permanently delete a user account and all related reports, events, and media."""
+    result = delete_user_account(user_id, actor_id=admin.id)
+    log_audit(
+        admin.id,
+        "delete_user_account",
+        "user",
+        user_id,
+        {
+            "deleted_email": result.get("email"),
+            "deleted_name": result.get("full_name"),
+            "summary": result.get("summary"),
+        },
+    )
+    return result

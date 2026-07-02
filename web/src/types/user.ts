@@ -73,6 +73,13 @@ export interface UserSummary {
   created_at?: string;
 }
 
+export interface DeleteAccountResult {
+  deleted_user_id: string;
+  email?: string;
+  full_name?: string;
+  summary: Record<string, number>;
+}
+
 export const LGU_ASSIGNABLE_ROLE_LABELS: Record<string, string> = {
   lgu_admin: 'LGU admin',
   lgu_staff: 'LGU staff',

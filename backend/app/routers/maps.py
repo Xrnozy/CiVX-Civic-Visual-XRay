@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query
 from app.auth.firebase import AuthUser, require_roles
 from app.db import get_supabase
 from app.utils.audit import normalize_submitter_type
-from app.utils.geocoding import resolve_barangay
+from app.utils.geocoding import resolve_address_fields, resolve_barangay, reverse_geocode_address
 from app.utils.storage import resolve_photo_url
 
 router = APIRouter(prefix="/api/maps", tags=["maps"])
@@ -18,6 +18,16 @@ def barangay_from_coordinates(
     """Reverse-geocode coordinates to a barangay label for cleanup/report forms."""
     label = resolve_barangay(latitude=latitude, longitude=longitude)
     return {"barangay": None if label == "Unknown" else label}
+
+
+@router.get("/address")
+def address_from_coordinates(
+    latitude: float = Query(..., ge=-90, le=90),
+    longitude: float = Query(..., ge=-180, le=180),
+):
+    """Reverse-geocode coordinates to barangay, street, city, and province."""
+    resolved = reverse_geocode_address(latitude, longitude)
+    return resolved.to_api_dict()
 
 
 @router.get("/markers")
@@ -80,9 +90,24 @@ def map_markers(issue_type: str | None = None, status: str | None = None, lgu: b
     )
     for event in events:
         event["preview_photo_url"] = resolve_photo_url(event.get("banner_url"))
+
+    ecoquest_tasks = [
+        task
+        for task in (
+            sb.table("ecoquest_tasks")
+            .select("id,title,latitude,longitude,barangay,task_type,status,reward_type")
+            .eq("status", "open")
+            .execute()
+            .data
+            or []
+        )
+        if task.get("latitude") is not None and task.get("longitude") is not None
+    ]
+
     return {
         "incidents": incidents,
         "cleanup_events": events,
+        "ecoquest_tasks": ecoquest_tasks,
     }
 
 

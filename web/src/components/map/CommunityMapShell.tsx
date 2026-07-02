@@ -7,10 +7,11 @@ import {
   CommunityIncidentReport,
 } from './CommunityIncidentDrawer';
 import { CommunityEventDrawer } from './CommunityEventDrawer';
+import { CommunityEcoQuestDrawer, type EcoQuestMapTask } from './CommunityEcoQuestDrawer';
 import { type MapLayer } from './MapFilterBar';
 import { type MapSubNavConfig } from './MapSubNav';
 import { MapTopBar } from './MapTopBar';
-import { ButtonPrimary } from '../ui/Buttons';
+import { ButtonDark, ButtonPrimary } from '../ui/Buttons';
 import { ImageGalleryOverlay } from '../ui/ImageGalleryOverlay';
 import { SlideInPanel } from '../motion/SlideInPanel';
 import type { OrganizerCleanupEvent } from '../organizer/OrganizerEventDetailCard';
@@ -26,7 +27,7 @@ export interface CommunityMapMarker {
   longitude: number;
   primary_issue_type?: string;
   title?: string;
-  type: 'incident' | 'cleanup';
+  type: 'incident' | 'cleanup' | 'ecoquest';
   status?: string;
   severity_score?: number;
   report_count?: number;
@@ -40,6 +41,8 @@ export interface CommunityMapMarker {
   preview_created_at?: string;
   barangay?: string;
   scheduled_start?: string;
+  task_type?: string;
+  reward_type?: string;
 }
 
 interface IncidentDetailsBundle {
@@ -87,6 +90,7 @@ export function CommunityMapShell({
   const { profile, ready: profileReady } = useProfile();
   const [incidentMarkers, setIncidentMarkers] = useState<CommunityMapMarker[]>([]);
   const [eventMarkers, setEventMarkers] = useState<CommunityMapMarker[]>([]);
+  const [ecoquestMarkers, setEcoquestMarkers] = useState<CommunityMapMarker[]>([]);
   const [mapLayer, setMapLayer] = useState<MapLayer>('issues');
   const [issueType, setIssueType] = useState('');
   const [status, setStatus] = useState('');
@@ -94,8 +98,10 @@ export function CommunityMapShell({
   const [expanded, setExpanded] = useState(false);
   const [loadingIncidentDetails, setLoadingIncidentDetails] = useState(false);
   const [loadingEventDetails, setLoadingEventDetails] = useState(false);
+  const [loadingEcoQuestDetails, setLoadingEcoQuestDetails] = useState(false);
   const [incidentDetailsCache, setIncidentDetailsCache] = useState<Record<string, IncidentDetailsBundle>>({});
   const [eventDetailsCache, setEventDetailsCache] = useState<Record<string, PublicCleanupEvent>>({});
+  const [ecoquestDetailsCache, setEcoquestDetailsCache] = useState<Record<string, EcoQuestMapTask>>({});
   const [volunteerStatusCache, setVolunteerStatusCache] = useState<Record<string, VolunteerEventStatus>>({});
   const [joinLoading, setJoinLoading] = useState(false);
   const [joinError, setJoinError] = useState('');
@@ -119,14 +125,32 @@ export function CommunityMapShell({
         scheduled_start?: string;
         preview_photo_url?: string;
       }>;
+      ecoquest_tasks?: Array<{
+        id: string;
+        latitude: number;
+        longitude: number;
+        title: string;
+        barangay?: string;
+        task_type?: string;
+        reward_type?: string;
+      }>;
     }>(`/api/maps/markers${query ? `?${query}` : ''}`)
       .then((data) => {
         setIncidentMarkers(data.incidents.map((incident) => ({ ...incident, type: 'incident' as const })));
         setEventMarkers((data.cleanup_events ?? []).map((event) => ({ ...event, type: 'cleanup' as const })));
+        setEcoquestMarkers(
+          (data.ecoquest_tasks ?? []).map((task) => ({
+            ...task,
+            type: 'ecoquest' as const,
+            task_type: task.task_type,
+            reward_type: task.reward_type,
+          })),
+        );
       })
       .catch(() => {
         setIncidentMarkers([]);
         setEventMarkers([]);
+        setEcoquestMarkers([]);
       });
   }, [issueType, status, lguMarkers]);
 
@@ -136,7 +160,9 @@ export function CommunityMapShell({
         ? incidentMarkers
         : mapLayer === 'events'
           ? eventMarkers
-          : [...incidentMarkers, ...eventMarkers];
+          : mapLayer === 'ecoquest'
+            ? ecoquestMarkers
+            : [...incidentMarkers, ...eventMarkers, ...ecoquestMarkers];
 
     return baseMarkers.map((marker) => {
       if (marker.type !== 'cleanup') return marker;
@@ -144,7 +170,7 @@ export function CommunityMapShell({
       if (!bannerUrl || marker.preview_photo_url === bannerUrl) return marker;
       return { ...marker, preview_photo_url: bannerUrl };
     });
-  }, [eventDetailsCache, eventMarkers, incidentMarkers, mapLayer]);
+  }, [ecoquestMarkers, eventDetailsCache, eventMarkers, incidentMarkers, mapLayer]);
 
   useEffect(() => {
     const marker = selectedMarker;
@@ -165,6 +191,35 @@ export function CommunityMapShell({
       })
       .finally(() => {
         if (!cancelled) setLoadingIncidentDetails(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedMarker?.id, selectedMarker?.type]);
+
+  useEffect(() => {
+    const marker = selectedMarker;
+    if (!marker || marker.type !== 'ecoquest') return;
+
+    let cancelled = false;
+    setLoadingEcoQuestDetails(true);
+    api<EcoQuestMapTask>(`/api/ecoquest/tasks/${marker.id}`)
+      .then((task) => {
+        if (cancelled) return;
+        setEcoquestDetailsCache((prev) => ({ ...prev, [marker.id]: task }));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEcoquestDetailsCache((prev) => {
+            const next = { ...prev };
+            delete next[marker.id];
+            return next;
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingEcoQuestDetails(false);
       });
 
     return () => {
@@ -235,6 +290,10 @@ export function CommunityMapShell({
   const activeEventDetails =
     selectedMarker && selectedMarker.type === 'cleanup' ? eventDetailsCache[selectedMarker.id] : undefined;
   const drawerEvent = activeEventDetails ?? null;
+  const drawerEcoQuest =
+    selectedMarker && selectedMarker.type === 'ecoquest'
+      ? ecoquestDetailsCache[selectedMarker.id] ?? null
+      : null;
   const volunteerStatus =
     selectedMarker?.type === 'cleanup' ? volunteerStatusCache[selectedMarker.id] : undefined;
 
@@ -244,6 +303,13 @@ export function CommunityMapShell({
     setJoinError('');
     setGallery(null);
   }
+
+  const openLguReview = useCallback(
+    (incidentId: string) => {
+      navigate(`/lgu/queue?incident=${encodeURIComponent(incidentId)}`);
+    },
+    [navigate],
+  );
 
   const handleJoinEvent = useCallback(async () => {
     if (!selectedMarker || selectedMarker.type !== 'cleanup') return;
@@ -353,6 +419,7 @@ export function CommunityMapShell({
           onStatusChange={setStatus}
           incidentCount={incidentMarkers.length}
           eventCount={eventMarkers.length}
+          ecoquestCount={ecoquestMarkers.length}
         />
         <div className="min-h-0 flex-1">
           <CivicMap
@@ -373,15 +440,39 @@ export function CommunityMapShell({
             onMapBackgroundClick={closePreview}
             onPreviewExpand={(markerId) => {
               const marker = markers.find((item) => item.id === markerId);
-              if (marker) {
-                setSelectedMarker(marker);
-                setExpanded(true);
-                setJoinError('');
-                setGallery(null);
+              if (!marker) return;
+              if (lguMode && marker.type === 'incident') {
+                openLguReview(marker.id);
+                return;
               }
+              setSelectedMarker(marker);
+              setExpanded(true);
+              setJoinError('');
+              setGallery(null);
             }}
           />
         </div>
+
+        {lguMode && selectedMarker?.type === 'incident' ? (
+          <div className="pointer-events-none absolute inset-x-0 bottom-6 z-30 flex justify-center px-4">
+            <div className="pointer-events-auto flex flex-wrap items-center justify-center gap-2 rounded-full border border-hairline bg-canvas/95 p-2 shadow-[0_12px_32px_rgba(0,0,0,0.18)] backdrop-blur-sm">
+              <ButtonPrimary
+                type="button"
+                className="justify-center px-5 py-2.5 text-sm"
+                onClick={() => openLguReview(selectedMarker.id)}
+              >
+                Review in queue
+              </ButtonPrimary>
+              <ButtonDark
+                type="button"
+                className="justify-center px-5 py-2.5 text-sm"
+                onClick={() => setExpanded(true)}
+              >
+                View details
+              </ButtonDark>
+            </div>
+          </div>
+        ) : null}
 
         {gallery ? (
           <ImageGalleryOverlay
@@ -410,6 +501,17 @@ export function CommunityMapShell({
                 onClose={closePreview}
                 onOpenGallery={(images, index) => setGallery({ images, index })}
                 overlay
+                footer={
+                  lguMode && selectedMarker?.type === 'incident' ? (
+                    <ButtonPrimary
+                      type="button"
+                      className="w-full justify-center"
+                      onClick={() => openLguReview(selectedMarker.id)}
+                    >
+                      Review in queue
+                    </ButtonPrimary>
+                  ) : undefined
+                }
               />
             </SlideInPanel>
           </>
@@ -432,6 +534,25 @@ export function CommunityMapShell({
                 onClose={closePreview}
                 overlay
                 volunteerFooter={volunteerFooter()}
+              />
+            </SlideInPanel>
+          </>
+        ) : null}
+
+        {expanded && selectedMarker?.type === 'ecoquest' ? (
+          <>
+            <button
+              type="button"
+              aria-label="Close EcoQuest task details"
+              className="absolute inset-0 z-20 bg-black/40"
+              onClick={closePreview}
+            />
+            <SlideInPanel className="map-drawer-panel">
+              <CommunityEcoQuestDrawer
+                task={drawerEcoQuest}
+                loading={loadingEcoQuestDetails}
+                onClose={closePreview}
+                overlay
               />
             </SlideInPanel>
           </>

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { StatCard } from '../../components/ui/StatCard';
 import { IncidentDetailPanel, type Incident } from '../../components/lgu/IncidentDetailPanel';
 import { IncidentStatusBadge, PriorityBadge, SourceBadge, formatLabel } from '../../components/lgu/IncidentBadges';
@@ -32,6 +33,8 @@ function mergeQueueUpdates(prev: Incident[], updates: Incident[]): Incident[] {
 }
 
 export default function LGUQueuePage() {
+  const [searchParams] = useSearchParams();
+  const incidentFromUrl = searchParams.get('incident');
   const [queue, setQueue] = useState<Incident[]>([]);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -41,6 +44,7 @@ export default function LGUQueuePage() {
   const [barangayFilter, setBarangayFilter] = useState('');
   const [view, setView] = useState<'active' | 'all'>('active');
   const [loading, setLoading] = useState(true);
+  const fetchedIncidentRef = useRef<string | null>(null);
 
   const load = useCallback(() => {
     const params = new URLSearchParams();
@@ -54,17 +58,41 @@ export default function LGUQueuePage() {
       .then((data) => {
         setQueue(data);
         setSelectedId((prev) => {
+          if (incidentFromUrl && data.some((i) => i.id === incidentFromUrl)) return incidentFromUrl;
           if (prev && data.some((i) => i.id === prev)) return prev;
           return data[0]?.id ?? null;
         });
       })
       .catch(() => setQueue([]))
       .finally(() => setLoading(false));
-  }, [statusFilter, issueFilter, sourceFilter, barangayFilter]);
+  }, [statusFilter, issueFilter, sourceFilter, barangayFilter, incidentFromUrl]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (!incidentFromUrl || loading) return;
+    if (queue.some((item) => item.id === incidentFromUrl)) {
+      setSelectedId(incidentFromUrl);
+      return;
+    }
+    if (fetchedIncidentRef.current === incidentFromUrl) return;
+    fetchedIncidentRef.current = incidentFromUrl;
+    let cancelled = false;
+    api<Incident>(`/api/incidents/${incidentFromUrl}`)
+      .then((incident) => {
+        if (cancelled) return;
+        setQueue((prev) => (prev.some((item) => item.id === incident.id) ? prev : [incident, ...prev]));
+        setSelectedId(incident.id);
+      })
+      .catch(() => {
+        /* incident may have been archived or removed */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [incidentFromUrl, loading, queue]);
 
   useEffect(() => {
     api<Department[]>('/api/departments').then(setDepartments).catch(() => setDepartments([]));

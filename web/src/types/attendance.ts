@@ -5,6 +5,8 @@ export type AttendanceStatus =
   | 'verified'
   | 'rejected';
 
+export type TrackerStatus = 'registered' | 'checked-in' | 'completed' | 'rejected';
+
 export interface AttendanceEventOption {
   id: string;
   title: string;
@@ -14,7 +16,8 @@ export interface AttendanceEventOption {
   approval_status: string;
   total_volunteers: number;
   total_verified_hours: number;
-  by_status: Record<AttendanceStatus, number>;
+  by_status: Record<string, number>;
+  by_tracker_status?: Record<TrackerStatus, number>;
 }
 
 export interface VolunteerAttendance {
@@ -24,8 +27,10 @@ export interface VolunteerAttendance {
   barangay?: string;
   phone_number?: string;
   emergency_contact?: string;
+  email?: string;
   organizer_status: AttendanceStatus;
   lgu_status: AttendanceStatus;
+  tracker_status: TrackerStatus;
   check_in_time?: string;
   check_out_time?: string;
   check_in_latitude?: number;
@@ -36,6 +41,8 @@ export interface VolunteerAttendance {
   calculated_hours: number;
   verified_hours: number;
   registered_at?: string;
+  certificate_sent_at?: string;
+  certificate_sent_to?: string;
 }
 
 export interface EventRoster {
@@ -47,15 +54,18 @@ export interface EventRoster {
     scheduled_end: string;
     approval_status: string;
     organizer_user_id: string;
+    auto_send_certificates?: boolean;
   };
   permissions: {
     can_view_pii: boolean;
     can_organizer_verify: boolean;
     can_lgu_verify: boolean;
+    can_send_certificate: boolean;
   };
   summary: {
     total_volunteers: number;
-    by_status: Record<AttendanceStatus, number>;
+    by_status: Record<string, number>;
+    by_tracker_status?: Record<TrackerStatus, number>;
     checked_in_percent: number;
     total_verified_hours: number;
   };
@@ -75,4 +85,22 @@ export interface ServiceCertificate {
     verified_status: AttendanceStatus;
   };
   html: string;
+}
+
+export interface CertificateSendResult {
+  user_id: string;
+  sent: boolean;
+  skipped?: boolean;
+  reason?: string;
+  email?: string;
+  certificate_sent_at?: string;
+  mode?: string;
+}
+
+export interface BatchCertificateSendResult {
+  event_id: string;
+  sent_count: number;
+  skipped_count: number;
+  sent: CertificateSendResult[];
+  skipped: CertificateSendResult[];
 }

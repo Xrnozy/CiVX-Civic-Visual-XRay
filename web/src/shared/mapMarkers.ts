@@ -22,7 +22,10 @@ import {
   mdiWaterOutline,
   mdiWaves,
   mdiCircleOutline,
+  mdiLeaf,
 } from '@mdi/js';
+
+export type MapMarkerType = 'incident' | 'cleanup' | 'ecoquest';
 
 export const ISSUE_MARKER_COLORS: Record<string, string> = {
   garbage_pile: '#d93025',
@@ -45,6 +48,7 @@ export const ISSUE_MARKER_COLORS: Record<string, string> = {
   damaged_traffic_sign: '#7c3aed',
   unsafe_public_area: '#c5221f',
   cleanup_event: '#0f766e',
+  ecoquest_task: '#15803d',
 };
 
 /** MaterialCommunityIcons names for mobile custom markers. */
@@ -69,6 +73,7 @@ export const ISSUE_MARKER_ICONS: Record<string, string> = {
   damaged_traffic_sign: 'sign-direction',
   unsafe_public_area: 'shield-alert',
   cleanup_event: 'calendar-star',
+  ecoquest_task: 'leaf',
 };
 
 /** MDI SVG paths keyed by issue slug (matches mobile icon semantics). */
@@ -93,9 +98,11 @@ const ISSUE_MARKER_MDI_PATHS: Record<string, string> = {
   damaged_traffic_sign: mdiSignDirection,
   unsafe_public_area: mdiShieldAlert,
   cleanup_event: mdiCalendarStar,
+  ecoquest_task: mdiLeaf,
 };
 
 export const CLEANUP_MARKER_COLOR = '#0f766e';
+export const ECOQUEST_MARKER_COLOR = '#15803d';
 export const DEFAULT_INCIDENT_MARKER_COLOR = '#d93025';
 
 export const ISSUE_BADGE_SIZE = 38;
@@ -109,27 +116,29 @@ export interface GoogleMapsMarkerIcon {
 
 export function markerColorForIssue(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: MapMarkerType = 'incident',
 ): string {
   if (markerType === 'cleanup') return CLEANUP_MARKER_COLOR;
+  if (markerType === 'ecoquest') return ECOQUEST_MARKER_COLOR;
   if (!issueType) return DEFAULT_INCIDENT_MARKER_COLOR;
   return ISSUE_MARKER_COLORS[issueType] ?? DEFAULT_INCIDENT_MARKER_COLOR;
 }
 
 export function issueMarkerIconName(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: MapMarkerType = 'incident',
 ): string {
   if (markerType === 'cleanup') return ISSUE_MARKER_ICONS.cleanup_event;
+  if (markerType === 'ecoquest') return ISSUE_MARKER_ICONS.ecoquest_task;
   if (!issueType) return 'map-marker-alert';
   return ISSUE_MARKER_ICONS[issueType] ?? 'map-marker-alert';
 }
 
 export function hasCustomIssueMarker(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: MapMarkerType = 'incident',
 ): boolean {
-  if (markerType === 'cleanup') return true;
+  if (markerType === 'cleanup' || markerType === 'ecoquest') return true;
   return Boolean(issueType && issueType in ISSUE_MARKER_ICONS);
 }
 
@@ -163,7 +172,7 @@ function issueDotSvg(color: string, size = ISSUE_DOT_SIZE): string {
 
 export function buildGoogleMapsIssueIcon(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: MapMarkerType = 'incident',
   mergedCount = 1,
 ): GoogleMapsMarkerIcon {
   const color = markerColorForIssue(issueType, markerType);
@@ -177,7 +186,12 @@ export function buildGoogleMapsIssueIcon(
     };
   }
 
-  const key = markerType === 'cleanup' ? 'cleanup_event' : issueType!;
+  const key =
+    markerType === 'cleanup'
+      ? 'cleanup_event'
+      : markerType === 'ecoquest'
+        ? 'ecoquest_task'
+        : issueType!;
   const pathD = ISSUE_MARKER_MDI_PATHS[key] ?? mdiTrashCan;
   const size = ISSUE_BADGE_SIZE;
 

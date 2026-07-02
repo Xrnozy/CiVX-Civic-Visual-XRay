@@ -3,10 +3,12 @@ import { OrganizerEventDetailCard, type OrganizerCleanupEvent } from '../organiz
 import { FORM_FIELD_INPUT } from '../map/LocationPickerSection';
 import { ButtonPrimary, ButtonSecondaryPill } from '../ui/Buttons';
 import { api } from '../../lib/api';
-import type { EventParticipant, PublicEventDetail } from '../../types/eventDetail';
+import { useCleanupEventLoad } from '../../hooks/useCleanupEventLoad';
+import type { EventParticipant } from '../../types/eventDetail';
 
 export interface CleanupEvent extends OrganizerCleanupEvent {
   max_volunteers?: number;
+  created_at?: string;
 }
 
 interface Props {
@@ -26,8 +28,7 @@ export function CleanupEventDetailPanel({ event, onAction }: Props) {
   const [showApproveConfirm, setShowApproveConfirm] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [rejectError, setRejectError] = useState('');
-  const [detail, setDetail] = useState<PublicEventDetail | null>(null);
-  const [goingCount, setGoingCount] = useState(0);
+  const { event: detail, setEvent: setDetail, loading: detailLoading, goingCount } = useCleanupEventLoad(event.id);
   const [participants, setParticipants] = useState<EventParticipant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState('');
@@ -37,24 +38,6 @@ export function CleanupEventDetailPanel({ event, onAction }: Props) {
     setShowApproveConfirm(false);
     setRejectReason('');
     setRejectError('');
-  }, [event.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    api<PublicEventDetail>(`/api/cleanup-events/${event.id}`)
-      .then((data) => {
-        if (cancelled) return;
-        setDetail(data);
-        setGoingCount(data.going_count ?? 0);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDetail(null);
-        setGoingCount(0);
-      });
-    return () => {
-      cancelled = true;
-    };
   }, [event.id]);
 
   useEffect(() => {

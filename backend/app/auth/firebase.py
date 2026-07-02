@@ -70,6 +70,12 @@ async def get_current_user(
 
     firebase_uid = decoded["uid"]
     email = decoded.get("email")
+    _agent_log(
+        "firebase.py:get_current_user",
+        "token verified",
+        {"firebase_uid": firebase_uid[:8], "email_prefix": (email or "")[:3]},
+        "H-token",
+    )
     name = decoded.get("name") or email or "CiVX User"
 
     sb = get_supabase()
@@ -135,6 +141,18 @@ async def get_current_user(
         _agent_log("firebase.py:get_current_user", "insert ok", {"userId": row.get("id")}, "H5")
     except Exception as exc:
         _agent_log("firebase.py:get_current_user", "insert failed", {"error": str(exc)[:300]}, "H5")
+        retry = sb.table("users").select("*").eq("firebase_uid", firebase_uid).limit(1).execute()
+        if retry.data:
+            row = retry.data[0]
+            role = (row.get("role") or "citizen").strip()
+            return AuthUser(
+                id=row["id"],
+                firebase_uid=firebase_uid,
+                email=row.get("email") or email,
+                full_name=row.get("full_name") or name,
+                role=role,
+                registration_completed=bool(row.get("registration_completed_at")),
+            )
         raise
     return AuthUser(
         id=row["id"],

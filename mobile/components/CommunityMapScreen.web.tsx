@@ -190,7 +190,10 @@ export default function CommunityMapScreen({ showProfile = false }: { showProfil
           gestureHandling: 'greedy',
           styles: [
             { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+            { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
             { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+            { featureType: 'transit.station', stylers: [{ visibility: 'off' }] },
+            { featureType: 'transit.line', stylers: [{ visibility: 'off' }] },
           ],
         });
         setMapsStatus('ready');

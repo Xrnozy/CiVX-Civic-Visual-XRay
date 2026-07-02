@@ -1,6 +1,7 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { startFreshDemoSession } from './demoSession';
+import { useMobileImmersiveMode } from './useMobileImmersiveMode';
 
 import {
   mdiCalendar,
@@ -32,6 +33,8 @@ function MobileTabIcon({ path, size = 24 }: { path: string; size?: number }) {
 
 export function MobileDemoLayout() {
   const location = useLocation();
+  const rootRef = useRef<HTMLDivElement>(null);
+  const { isImmersive, showEnterHint, enterImmersive, exitImmersive } = useMobileImmersiveMode(rootRef);
 
   useEffect(() => {
     document.documentElement.classList.add('mobile-demo-active');
@@ -44,13 +47,45 @@ export function MobileDemoLayout() {
     void startFreshDemoSession().catch(() => {});
     return () => {
       document.documentElement.classList.remove('mobile-demo-active');
+      document.documentElement.classList.remove('mobile-demo-immersive');
       document.body.classList.remove('mobile-demo-active');
       themeMeta?.setAttribute('content', previousTheme);
     };
   }, []);
 
+  useEffect(() => {
+    document.documentElement.classList.toggle('mobile-demo-immersive', isImmersive);
+  }, [isImmersive]);
+
   return (
-    <div className="mobile-demo-root">
+    <div ref={rootRef} className={`mobile-demo-root ${isImmersive ? 'mobile-demo-root-immersive' : ''}`}>
+      <div className="mobile-immersive-controls" aria-label="Fullscreen controls">
+        {showEnterHint && !isImmersive ? (
+          <button
+            type="button"
+            className="mobile-immersive-enter"
+            onClick={() => void enterImmersive()}
+          >
+            Tap for fullscreen
+          </button>
+        ) : null}
+        {isImmersive ? (
+          <button
+            type="button"
+            className="mobile-immersive-exit"
+            onClick={() => void exitImmersive()}
+            aria-label="Exit fullscreen"
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path
+                fill="currentColor"
+                d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"
+              />
+            </svg>
+            Exit
+          </button>
+        ) : null}
+      </div>
       <main className="mobile-demo-main">
         <Outlet />
       </main>

@@ -21,6 +21,7 @@ export const ISSUE_MARKER_COLORS: Record<string, string> = {
   damaged_traffic_sign: '#7c3aed',
   unsafe_public_area: '#c5221f',
   cleanup_event: '#0f766e',
+  ecoquest_task: '#15803d',
 };
 
 export const ISSUE_MARKER_ICONS: Record<string, string> = {
@@ -44,33 +45,37 @@ export const ISSUE_MARKER_ICONS: Record<string, string> = {
   damaged_traffic_sign: 'sign-direction',
   unsafe_public_area: 'shield-alert',
   cleanup_event: 'calendar-star',
+  ecoquest_task: 'leaf',
 };
 
 export const CLEANUP_MARKER_COLOR = '#0f766e';
+export const ECOQUEST_MARKER_COLOR = '#15803d';
 export const DEFAULT_INCIDENT_MARKER_COLOR = '#d93025';
 
 export function markerColorForIssue(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: 'incident' | 'cleanup' | 'ecoquest' = 'incident',
 ): string {
   if (markerType === 'cleanup') return CLEANUP_MARKER_COLOR;
+  if (markerType === 'ecoquest') return ECOQUEST_MARKER_COLOR;
   if (!issueType) return DEFAULT_INCIDENT_MARKER_COLOR;
   return ISSUE_MARKER_COLORS[issueType] ?? DEFAULT_INCIDENT_MARKER_COLOR;
 }
 
 export function issueMarkerIconName(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: 'incident' | 'cleanup' | 'ecoquest' = 'incident',
 ): string {
   if (markerType === 'cleanup') return ISSUE_MARKER_ICONS.cleanup_event;
+  if (markerType === 'ecoquest') return ISSUE_MARKER_ICONS.ecoquest_task;
   if (!issueType) return 'map-marker-alert';
   return ISSUE_MARKER_ICONS[issueType] ?? 'map-marker-alert';
 }
 
 export function hasCustomIssueMarker(
   issueType?: string,
-  markerType: 'incident' | 'cleanup' = 'incident',
+  markerType: 'incident' | 'cleanup' | 'ecoquest' = 'incident',
 ): boolean {
-  if (markerType === 'cleanup') return true;
+  if (markerType === 'cleanup' || markerType === 'ecoquest') return true;
   return Boolean(issueType && issueType in ISSUE_MARKER_ICONS);
 }

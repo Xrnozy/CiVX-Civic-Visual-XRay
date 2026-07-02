@@ -1,13 +1,24 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
 import { useProfile } from '../../hooks/useProfile';
 import { getDemoSessionToken } from '../demoSession';
+
+interface MyCertificate {
+  event_id: string;
+  title: string;
+  barangay?: string;
+  service_hours: number;
+  verified_at?: string;
+  certificate_sent_at?: string;
+}
 
 export default function MobileAccount() {
   const { user, ready: authReady } = useAuth();
   const { profile, ready: profileReady } = useProfile();
   const [reports, setReports] = useState<Array<{ id: string; issue_type: string; created_at: string; status: string }>>([]);
+  const [certificates, setCertificates] = useState<MyCertificate[]>([]);
 
   useEffect(() => {
     const t = getDemoSessionToken();
@@ -17,6 +28,16 @@ export default function MobileAccount() {
       .then(setReports)
       .catch(() => setReports([]));
   }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setCertificates([]);
+      return;
+    }
+    api<{ certificates: MyCertificate[] }>('/api/attendance/me')
+      .then((data) => setCertificates(data.certificates ?? []))
+      .catch(() => setCertificates([]));
+  }, [user]);
 
   const displayName = profile?.full_name || user?.displayName || user?.email?.split('@')[0];
 
@@ -48,6 +69,29 @@ export default function MobileAccount() {
           </div>
         )}
       </div>
+
+      {user && profile ? (
+        <div className="ui-card">
+          <p className="font-semibold">Volunteer certificates</p>
+          {certificates.length === 0 ? (
+            <p className="mt-2 text-sm text-ink-muted-48">
+              Complete event check-in and check-out to earn certificates. Your organizer will email them when ready.
+            </p>
+          ) : (
+            <ul className="mt-3 space-y-2">
+              {certificates.map((c) => (
+                <li key={c.event_id} className="rounded-lg border border-hairline px-3 py-2 text-sm">
+                  <p className="font-medium text-ink">{c.title}</p>
+                  <p className="text-ink-muted-48">
+                    {c.service_hours} hr{c.service_hours === 1 ? '' : 's'}
+                    {c.certificate_sent_at ? ' · Emailed' : ' · Pending email'}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ) : null}
 
       <div className="ui-card">
         <p className="font-semibold">Your reports</p>

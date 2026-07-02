@@ -452,6 +452,47 @@ html.mobile-demo-active .motion-page {
   background: #f5f5f7;
   color: #1d1d1f;
   overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+html.mobile-demo-immersive,
+html.mobile-demo-immersive body {
+  background: #000000;
+}
+
+.mobile-demo-root-immersive {
+  background: #000000;
+}
+
+.mobile-immersive-controls {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  left: calc(env(safe-area-inset-left, 0px) + 12px);
+  z-index: 60;
+  display: flex;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.mobile-immersive-enter,
+.mobile-immersive-exit {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.94);
+  color: #1d1d1f;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(10px);
+}
+
+.mobile-immersive-exit svg {
+  flex: 0 0 auto;
 }
 
 .mobile-demo-main {
@@ -1356,6 +1397,12 @@ html.mobile-demo-active select {
   position: absolute;
   inset: 0;
   overflow: hidden;
+  z-index: 1;
+}
+
+.mobile-map-canvas > .relative,
+.mobile-map-canvas > .relative > div:last-child {
+  height: 100%;
 }
 
 .mobile-map-land {

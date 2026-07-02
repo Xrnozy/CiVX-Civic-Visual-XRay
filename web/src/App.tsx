@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { RegistrationGate } from './components/auth/RegistrationGate';
 import { PageLoader } from './components/ui/PageLoader';
 import HomePage from './pages/HomePage';
@@ -10,17 +10,16 @@ const EventsPage = lazy(() => import('./pages/EventsPage'));
 const EventDetailPage = lazy(() => import('./pages/EventDetailPage'));
 const EventCheckInPage = lazy(() => import('./pages/EventCheckInPage'));
 const EventCheckOutPage = lazy(() => import('./pages/EventCheckOutPage'));
+const EcoQuestCheckInPage = lazy(() => import('./pages/EcoQuestCheckInPage'));
 const LazyGalleryPage = lazy(() => import('./pages/GalleryPage'));
 const TransparencyPage = lazy(() => import('./pages/TransparencyPage'));
 const ReportPage = lazy(() => import('./pages/ReportPage'));
 const RegisterPage = lazy(() => import('./pages/RegisterPage'));
 const CompleteRegistrationPage = lazy(() => import('./pages/CompleteRegistrationPage'));
 const StreetSweeperWelcomePage = lazy(() => import('./pages/StreetSweeperWelcomePage'));
-const AnalyzerTestPage = lazy(() => import('./pages/AnalyzerTestPage'));
 const LGULayout = lazy(() => import('./pages/lgu/LGULayout').then((m) => ({ default: m.LGULayout })));
 const LGUDashboard = lazy(() => import('./pages/lgu/LGUDashboard'));
 const LGUQueuePage = lazy(() => import('./pages/lgu/LGUQueuePage'));
-const LGUMapPage = lazy(() => import('./pages/lgu/LGUMapPage'));
 const LGUCleanupPage = lazy(() => import('./pages/lgu/LGUCleanupPage'));
 const LGUAttendancePage = lazy(() => import('./pages/lgu/LGUAttendancePage'));
 const LGUEcoQuestPage = lazy(() => import('./pages/lgu/LGUEcoQuestPage'));
@@ -45,6 +44,11 @@ const DispatchDashboard = lazy(() => import('./pages/dispatch/DispatchDashboard'
 const DispatchCasePage = lazy(() => import('./pages/dispatch/DispatchCasePage'));
 const DispatchMapPage = lazy(() => import('./pages/dispatch/DispatchMapPage'));
 
+function LguMapRedirect() {
+  const location = useLocation();
+  return <Navigate to={`/map${location.search}`} replace />;
+}
+
 export default function App() {
   return (
     <RegistrationGate>
@@ -55,10 +59,10 @@ export default function App() {
           <Route path="/events/:eventId" element={<EventDetailPage />} />
           <Route path="/check-in/:eventId" element={<EventCheckInPage />} />
           <Route path="/check-out/:eventId" element={<EventCheckOutPage />} />
+          <Route path="/ecoquest-check-in/:taskId" element={<EcoQuestCheckInPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/report" element={<ReportPage />} />
-          <Route path="/analyzer" element={<AnalyzerTestPage />} />
-          <Route path="/analyzer/test" element={<AnalyzerTestPage />} />
+          <Route path="/lgu/map" element={<LguMapRedirect />} />
           <Route path="/gallery" element={<LazyGalleryPage />} />
           <Route path="/transparency" element={<TransparencyPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -82,7 +86,6 @@ export default function App() {
           <Route path="/lgu" element={<LGULayout />}>
             <Route index element={<LGUDashboard />} />
             <Route path="queue" element={<LGUQueuePage />} />
-            <Route path="map" element={<LGUMapPage />} />
             <Route path="cleanup" element={<LGUCleanupPage />} />
             <Route path="worker-invites" element={<LGUWorkerInvitesPage />} />
             <Route path="staff" element={<LGUStaffPage />} />

@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { Footer } from '../components/ui/Footer';
 import { ButtonPrimary } from '../components/ui/Buttons';
-import { FORM_FIELD_INPUT, LocationPickerSection, hasValidLocation } from '../components/map/LocationPickerSection';
+import { FORM_FIELD_INPUT, LocationPickerSection, hasDetectedBarangay, hasValidLocation } from '../components/map/LocationPickerSection';
+import { EMPTY_PICKED_ADDRESS } from '../lib/geocoding';
+import type { PickedAddress } from '../types/pickedAddress';
 import { api } from '../lib/api';
 import { ISSUE_CATEGORIES } from '../shared/constants';
 import { useAuth } from '../hooks/useAuth';
@@ -23,7 +25,7 @@ export default function ReportPage() {
   const [photos, setPhotos] = useState<ReportPhoto[]>([]);
   const [issueType, setIssueType] = useState('garbage_pile');
   const [description, setDescription] = useState('');
-  const [barangay, setBarangay] = useState('');
+  const [address, setAddress] = useState<PickedAddress>(EMPTY_PICKED_ADDRESS);
   const [latitude, setLatitude] = useState('');
   const [longitude, setLongitude] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -35,8 +37,13 @@ export default function ReportPage() {
   }, [latitude, longitude]);
 
   const canSubmit = useMemo(() => {
-    return Boolean(photos.length > 0 && selectedLocation && !submitting);
-  }, [photos.length, selectedLocation, submitting]);
+    return Boolean(
+      photos.length > 0 &&
+        selectedLocation &&
+        hasDetectedBarangay(address) &&
+        !submitting,
+    );
+  }, [photos.length, selectedLocation, address.barangay, submitting]);
 
   useEffect(() => {
     if (!ready) return;
@@ -85,12 +92,15 @@ export default function ReportPage() {
       form.append('longitude', String(selectedLocation.longitude));
       form.append('description', description.trim() || 'Web report');
       form.append('issue_type', issueType);
-      if (barangay.trim()) form.append('barangay', barangay.trim());
+      if (address.barangay.trim()) form.append('barangay', address.barangay.trim());
+      if (address.street.trim()) form.append('street', address.street.trim());
+      if (address.city.trim()) form.append('city', address.city.trim());
+      if (address.province.trim()) form.append('province', address.province.trim());
 
       const data = await api<ReportResult>('/api/reports', { method: 'POST', body: form });
       setResult(data);
       setDescription('');
-      setBarangay('');
+      setAddress(EMPTY_PICKED_ADDRESS);
       photos.forEach((photo) => URL.revokeObjectURL(photo.previewUrl));
       setPhotos([]);
       setIssueType('garbage_pile');
@@ -165,9 +175,9 @@ export default function ReportPage() {
               <LocationPickerSection
                 latitude={latitude}
                 longitude={longitude}
-                barangay={barangay}
-                autoBarangay
-                onBarangayChange={setBarangay}
+                address={address}
+                autoDetectAddress
+                onAddressChange={setAddress}
                 onChange={(lat, lng) => {
                   setLatitude(lat);
                   setLongitude(lng);
@@ -199,7 +209,9 @@ export default function ReportPage() {
                   />
                 </label>
 
-                <p className="mt-4 text-sm text-ink-muted-48">Barangay is detected from your map pin in the location section.</p>
+                <p className="mt-4 text-sm text-ink-muted-48">
+                  Street, barangay, city, and province are detected from your map pin in the location section.
+                </p>
               </section>
 
               <section className="rounded-[24px] border border-hairline bg-canvas-parchment p-5 md:p-6">

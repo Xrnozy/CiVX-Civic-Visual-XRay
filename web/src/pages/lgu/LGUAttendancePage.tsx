@@ -2,12 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../hooks/useAuth';
-import type { AttendanceEventOption, EventRoster, ServiceCertificate, VolunteerAttendance } from '../../types/attendance';
+import type { AttendanceEventOption, EventRoster, VolunteerAttendance } from '../../types/attendance';
 import { EventSelector } from '../../components/lgu/attendance/EventSelector';
 import { AttendanceSummaryBar } from '../../components/lgu/attendance/AttendanceSummaryBar';
 import { AttendanceTable } from '../../components/lgu/attendance/AttendanceTable';
 import { VolunteerDetailDrawer } from '../../components/lgu/attendance/VolunteerDetailDrawer';
-import { CertificateModal } from '../../components/lgu/attendance/CertificateModal';
 
 const POLL_MS = 10000;
 
@@ -18,7 +17,6 @@ export default function LGUAttendancePage() {
   const [selectedId, setSelectedId] = useState(searchParams.get('event_id') || '');
   const [roster, setRoster] = useState<EventRoster | null>(null);
   const [detail, setDetail] = useState<VolunteerAttendance | null>(null);
-  const [certificate, setCertificate] = useState<ServiceCertificate | null>(null);
 
   const loadEvents = useCallback(() => {
     api<AttendanceEventOption[]>('/api/attendance/events?approved_only=true')
@@ -54,20 +52,6 @@ export default function LGUAttendancePage() {
     return () => clearInterval(id);
   }, [selectedId, loadRoster, setSearchParams]);
 
-  const act = async (path: string) => {
-    if (!selectedId) return;
-    await api(path, { method: 'POST' });
-    loadRoster();
-  };
-
-  const openCertificate = async (v: VolunteerAttendance) => {
-    if (!selectedId) return;
-    const cert = await api<ServiceCertificate>(
-      `/api/attendance/events/${selectedId}/certificates/${v.user_id}`,
-    );
-    setCertificate(cert);
-  };
-
   const handleEventChange = (id: string) => {
     setSelectedId(id);
     setDetail(null);
@@ -79,7 +63,8 @@ export default function LGUAttendancePage() {
         <div>
           <h1 className="text-[34px] font-semibold">Attendance Monitor</h1>
           <p className="mt-1 text-sm text-ink-muted-80">
-            Live volunteer check-ins per cleanup event. Refreshes every {POLL_MS / 1000}s.
+            Tracker-based attendance — updates automatically from volunteer GPS/QR check-in and check-out.
+            Refreshes every {POLL_MS / 1000}s.
           </p>
         </div>
         <EventSelector events={events} selectedId={selectedId} onChange={handleEventChange} />
@@ -93,7 +78,7 @@ export default function LGUAttendancePage() {
           {new Date(roster.event.scheduled_start).toLocaleString()}
           {roster.summary.checked_in_percent > 0 && (
             <span className="ml-2 text-ink-muted-48">
-              ({roster.summary.checked_in_percent}% checked in)
+              ({roster.summary.checked_in_percent}% checked in or completed)
             </span>
           )}
         </p>
@@ -104,15 +89,7 @@ export default function LGUAttendancePage() {
       </div>
 
       <div className="mt-8">
-        <AttendanceTable
-          roster={roster}
-          onSelect={setDetail}
-          onOrganizerVerify={(uid) => act(`/api/attendance/events/${selectedId}/organizer-verify/${uid}`)}
-          onOrganizerReject={(uid) => act(`/api/attendance/events/${selectedId}/organizer-reject/${uid}`)}
-          onLguVerify={(uid) => act(`/api/attendance/events/${selectedId}/lgu-verify/${uid}`)}
-          onLguReject={(uid) => act(`/api/attendance/events/${selectedId}/lgu-reject/${uid}`)}
-          onCertificate={openCertificate}
-        />
+        <AttendanceTable mode="lgu" roster={roster} onSelect={setDetail} />
       </div>
 
       <VolunteerDetailDrawer
@@ -120,7 +97,6 @@ export default function LGUAttendancePage() {
         permissions={roster?.permissions ?? null}
         onClose={() => setDetail(null)}
       />
-      <CertificateModal certificate={certificate} onClose={() => setCertificate(null)} />
     </div>
   );
 }

@@ -4,6 +4,7 @@ from typing import Any
 
 from app.config import settings
 from app.db import get_supabase
+from app.utils.supabase_schema import insert_row
 
 
 @dataclass
@@ -118,16 +119,22 @@ class IncidentIntelligenceAgent:
     severity: float,
     source: str = "citizen",
     barangay: str | None = None,
+    street: str | None = None,
+    city: str | None = None,
+    province: str | None = None,
   ) -> dict:
     sb = get_supabase()
-    result = sb.table("incidents").insert({
+    result = insert_row(sb, "incidents", {
       "primary_issue_type": issue_type,
       "severity_score": severity,
       "latitude": lat,
       "longitude": lng,
       "barangay": barangay,
+      "street": street,
+      "city": city,
+      "province": province,
       "status": "pending_review",
       "report_count": 1,
       "source": source,
-    }).execute()
-    return result.data[0]
+    })
+    return result

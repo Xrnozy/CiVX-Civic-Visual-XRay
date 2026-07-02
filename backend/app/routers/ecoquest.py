@@ -50,20 +50,38 @@ def get_task(task_id: str):
 
 @router.post("/tasks")
 def create_task(body: EcoQuestTaskCreate, user: AuthUser = Depends(require_roles(*LGU))):
+    import json, time
+    _log_path = r"c:\Users\MY PC\Documents\Hackathon testing\CiVX\debug-ed5453.log"
+    def _dbg(msg, data, hid):
+        try:
+            with open(_log_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps({"sessionId":"ed5453","location":"ecoquest.py:create_task","message":msg,"data":data,"hypothesisId":hid,"runId":"publish-debug","timestamp":int(time.time()*1000)}) + "\n")
+        except Exception:
+            pass
+    _dbg("create_task entry", {"user_id": user.id, "title": body.title, "barangay": body.barangay}, "H5")
     sb = get_supabase()
     data = body.model_dump(exclude={"collaborators", "sponsors"})
     if body.latitude and body.longitude:
         data["location"] = f"SRID=4326;POINT({body.longitude} {body.latitude})"
     data["qr_code_token"] = str(uuid.uuid4())
-    row = sb.table("ecoquest_tasks").insert(data).execute().data[0]
+    try:
+        row = sb.table("ecoquest_tasks").insert(data).execute().data[0]
+    except Exception as exc:
+        _dbg("insert failed", {"error": str(exc)[:500]}, "H5")
+        raise
     task_id = row["id"]
     party_rows = (
         _party_rows(task_id, "collaborator", body.collaborators)
         + _party_rows(task_id, "sponsor", body.sponsors)
     )
     if party_rows:
-        sb.table("ecoquest_task_party_entries").insert(party_rows).execute()
+        try:
+            sb.table("ecoquest_task_party_entries").insert(party_rows).execute()
+        except Exception as exc:
+            _dbg("party insert failed", {"error": str(exc)[:500], "party_count": len(party_rows)}, "H5")
+            raise
     log_audit(user.id, "create_ecoquest_task", "ecoquest_task", task_id, {"title": body.title})
+    _dbg("create_task success", {"task_id": task_id}, "H5")
     return row
 
 

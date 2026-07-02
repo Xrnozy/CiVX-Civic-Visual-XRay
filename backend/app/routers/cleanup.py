@@ -14,8 +14,9 @@ from app.models.schemas import (
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
 from app.services import attendance as att
 from app.utils.audit import log_audit
-from app.utils.geocoding import enrich_event_barangay, resolve_barangay
+from app.utils.geocoding import enrich_event_barangay, resolve_address_fields
 from app.utils.storage import resolve_photo_url
+from app.utils.supabase_schema import insert_row, update_row
 
 router = APIRouter(prefix="/api/cleanup-events", tags=["cleanup"])
 LGU = ("lgu_admin", "lgu_staff")
@@ -123,12 +124,21 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
     sb = get_supabase()
     qr = str(uuid.uuid4())
     body_data = body.model_dump()
-    resolved_barangay = resolve_barangay(
-        barangay=body_data.get("barangay") or None,
-        latitude=body_data["latitude"],
-        longitude=body_data["longitude"],
-    )
-    body_data["barangay"] = None if resolved_barangay == "Unknown" else resolved_barangay
+    try:
+        resolved = resolve_address_fields(
+            barangay=body_data.get("barangay"),
+            street=body_data.get("street"),
+            city=body_data.get("city"),
+            province=body_data.get("province"),
+            latitude=body_data["latitude"],
+            longitude=body_data["longitude"],
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Address lookup failed: {exc}") from exc
+    body_data["barangay"] = resolved.barangay
+    body_data["street"] = resolved.street
+    body_data["city"] = resolved.city
+    body_data["province"] = resolved.province
     payload = {
         **body_data,
         "organizer_user_id": user.id,
@@ -158,9 +168,52 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
     except Exception:
         pass
     # #endregion
-    row = sb.table("cleanup_events").insert(payload).execute().data[0]
+    try:
+        row = insert_row(sb, "cleanup_events", payload)
+    except Exception as exc:
+        # #region agent log
+        import json, time
+        from pathlib import Path
+        _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+        try:
+            _log.open("a", encoding="utf-8").write(
+                json.dumps({
+                    "sessionId": "8b92e3",
+                    "location": "cleanup.py:create_event",
+                    "message": "insert failed",
+                    "data": {"error": str(exc)[:300]},
+                    "timestamp": int(time.time() * 1000),
+                    "hypothesisId": "H-create-500",
+                    "runId": "create-fix",
+                }) + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
+        raise HTTPException(status_code=500, detail=f"Could not create cleanup event: {exc}") from exc
     agent = CleanupCoordinationAgent()
-    agent.match_event_to_incident(row["id"])
+    try:
+        agent.match_event_to_incident(row["id"])
+    except Exception as exc:
+        # #region agent log
+        import json, time
+        from pathlib import Path
+        _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+        try:
+            _log.open("a", encoding="utf-8").write(
+                json.dumps({
+                    "sessionId": "8b92e3",
+                    "location": "cleanup.py:create_event",
+                    "message": "match_event_to_incident failed",
+                    "data": {"event_id": row.get("id"), "error": str(exc)[:200]},
+                    "timestamp": int(time.time() * 1000),
+                    "hypothesisId": "H-create-500",
+                    "runId": "create-fix",
+                }) + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
     return row
 
 

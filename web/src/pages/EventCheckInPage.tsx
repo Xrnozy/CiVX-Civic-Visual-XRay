@@ -5,6 +5,7 @@ import { Footer } from '../components/ui/Footer';
 import { ButtonPrimary } from '../components/ui/Buttons';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { useCleanupEventLoad } from '../hooks/useCleanupEventLoad';
 import type { PublicEventDetail } from '../types/eventDetail';
 import { isEventEnded, isEventStarted, getEventAttendancePhase } from '../shared/eventLifecycle';
 
@@ -28,8 +29,9 @@ export default function EventCheckInPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
   const { user, ready: authReady } = useAuth();
-  const [event, setEvent] = useState<PublicEventDetail | null>(null);
-  const [loadingEvent, setLoadingEvent] = useState(true);
+  const userId = user?.uid ?? null;
+  const canLoad = Boolean(authReady && userId && eventId);
+  const { event, loading: loadingEvent } = useCleanupEventLoad(eventId, canLoad);
   const [state, setState] = useState<CheckInState>('idle');
   const [message, setMessage] = useState('');
   const [checkInTime, setCheckInTime] = useState('');
@@ -38,32 +40,10 @@ export default function EventCheckInPage() {
 
   useEffect(() => {
     if (!authReady) return;
-    if (!user) {
+    if (!userId) {
       navigate(`/login?next=${encodeURIComponent(loginNext)}`, { replace: true });
     }
-  }, [authReady, user, navigate, loginNext]);
-
-  useEffect(() => {
-    if (!eventId || !user) return;
-
-    let cancelled = false;
-    setLoadingEvent(true);
-
-    api<PublicEventDetail>(`/api/cleanup-events/${eventId}`)
-      .then((data) => {
-        if (!cancelled) setEvent(data);
-      })
-      .catch(() => {
-        if (!cancelled) setEvent(null);
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingEvent(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId, user]);
+  }, [authReady, userId, navigate, loginNext]);
 
   async function handleCheckIn() {
     if (!eventId || !event) return;

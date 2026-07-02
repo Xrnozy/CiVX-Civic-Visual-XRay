@@ -44,6 +44,15 @@ class EcoQuestVerificationAgent:
             else:
                 reasons.append("Missing GPS check-in")
 
+        if required.get("qr"):
+            total += 1
+            qr_token = task.get("qr_code_token")
+            submitted_qr = sub.get("qr_code_id")
+            if qr_token and submitted_qr and str(submitted_qr).strip() == str(qr_token).strip():
+                score += 1
+            else:
+                reasons.append("Invalid or missing QR validation")
+
         ratio = score / total if total else 0
         if ratio >= 1.0:
             status = "approved"

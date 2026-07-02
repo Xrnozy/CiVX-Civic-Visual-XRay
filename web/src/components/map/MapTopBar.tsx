@@ -12,6 +12,7 @@ interface Props {
   onStatusChange: (value: string) => void;
   incidentCount: number;
   eventCount: number;
+  ecoquestCount: number;
 }
 
 export function MapTopBar({
@@ -24,6 +25,7 @@ export function MapTopBar({
   onStatusChange,
   incidentCount,
   eventCount,
+  ecoquestCount,
 }: Props) {
   return (
     <div className="map-controls-overlay">
@@ -42,6 +44,7 @@ export function MapTopBar({
             onStatusChange={onStatusChange}
             incidentCount={incidentCount}
             eventCount={eventCount}
+            ecoquestCount={ecoquestCount}
           />
         </div>
 

@@ -11,7 +11,7 @@ export const MOTION = {
   ease: 'power2.out',
 } as const;
 
-const HEAVY_MAP_ROUTES = new Set(['/map', '/lgu/map', '/dispatch/map', '/mobile/map']);
+const HEAVY_MAP_ROUTES = new Set(['/map', '/dispatch/map', '/mobile/map']);
 
 export function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined') return true;

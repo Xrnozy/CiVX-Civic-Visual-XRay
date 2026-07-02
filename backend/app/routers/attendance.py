@@ -13,8 +13,10 @@ from app.models.schemas import (
     AttendanceRejectBody,
     AttendanceWebCheckIn,
     AttendanceWebCheckOut,
+    CertificateSettingsBody,
 )
 from app.services import attendance as att
+from app.services import certificate_email as cert_email
 from app.utils.audit import log_audit
 
 router = APIRouter(prefix="/api/attendance", tags=["attendance"])
@@ -96,7 +98,7 @@ def my_attendance(user: AuthUser = Depends(get_current_user)):
         registration = registrations_by_event.get(record["event_id"], {})
         lgu_status = att.status_to_api(record.get("lgu_status"))
         organizer_status = att.status_to_api(record.get("organizer_status"))
-        verified_hours = float(record.get("calculated_hours") or 0) if record.get("lgu_status") == "verified" else 0.0
+        verified_hours = float(record.get("calculated_hours") or 0) if record.get("organizer_status") == "verified" else 0.0
         total_verified_hours += verified_hours
         item = {
             "event_id": record["event_id"],
@@ -110,11 +112,14 @@ def my_attendance(user: AuthUser = Depends(get_current_user)):
             "registered_at": registration.get("created_at") or record.get("created_at"),
             "organizer_status": organizer_status,
             "lgu_status": lgu_status,
+            "tracker_status": att.tracker_status(record),
             "check_in_time": record.get("check_in_time"),
             "check_out_time": record.get("check_out_time"),
             "calculated_hours": float(record.get("calculated_hours") or 0),
             "verified_hours": verified_hours,
-            "certificate_available": record.get("lgu_status") == "verified",
+            "certificate_available": record.get("organizer_status") == "verified",
+            "certificate_sent_at": record.get("certificate_sent_at"),
+            "certificate_sent_to": record.get("certificate_sent_to"),
         }
         items.append(item)
         if item["certificate_available"]:
@@ -124,6 +129,7 @@ def my_attendance(user: AuthUser = Depends(get_current_user)):
                 "barangay": item["barangay"],
                 "service_hours": verified_hours,
                 "verified_at": record.get("check_out_time") or record.get("check_in_time") or record.get("created_at"),
+                "certificate_sent_at": record.get("certificate_sent_at"),
             })
 
     return {
@@ -142,12 +148,45 @@ def service_certificate(
     event_id: str,
     user_id: str,
     format: str = "json",
-    user: AuthUser = Depends(require_roles(*MONITOR)),
+    user: AuthUser = Depends(require_roles("organizer", "lgu_admin")),
 ):
     cert = att.build_certificate(event_id, user_id, user)
     if format == "html":
         return HTMLResponse(cert["html"])
     return cert
+
+
+@router.post("/events/{event_id}/certificates/{user_id}/send")
+def send_certificate(
+    event_id: str,
+    user_id: str,
+    force: bool = False,
+    user: AuthUser = Depends(require_roles("organizer")),
+):
+    return cert_email.send_certificate_email(event_id, user_id, user, force=force)
+
+
+@router.post("/events/{event_id}/certificates/batch-send")
+def batch_send_certificates(
+    event_id: str,
+    user: AuthUser = Depends(require_roles("organizer")),
+):
+    return cert_email.batch_send_certificates(event_id, user)
+
+
+@router.patch("/events/{event_id}/certificate-settings")
+def update_certificate_settings(
+    event_id: str,
+    body: CertificateSettingsBody,
+    user: AuthUser = Depends(require_roles("organizer")),
+):
+    event = att.get_event(event_id)
+    cert_email.require_send_certificate(user, event)
+    sb = get_supabase()
+    sb.table("cleanup_events").update({
+        "auto_send_certificates": body.auto_send_certificates,
+    }).eq("id", event_id).execute()
+    return {"event_id": event_id, "auto_send_certificates": body.auto_send_certificates}
 
 
 @router.post("/events/{event_id}/organizer-verify/{target_user_id}")
@@ -308,12 +347,7 @@ def web_check_out(event_id: str, body: AttendanceWebCheckOut, user: AuthUser = D
     now = datetime.now(timezone.utc)
     check_in = _parse_dt(record["check_in_time"])
     hours = round((now - check_in).total_seconds() / 3600, 2)
-    sb.table("attendance_records").update({
-        "check_out_time": now.isoformat(),
-        "calculated_hours": hours,
-        "organizer_status": "checked_out",
-        "lgu_status": "checked_out",
-    }).eq("id", record["id"]).execute()
+    _finalize_checkout(sb, record["id"], event_id, user.id, now, hours)
     return {"status": "checked-out", "calculated_hours": hours, "check_out_time": now.isoformat()}
 
 
@@ -338,13 +372,25 @@ def check_out(
     now = datetime.now(timezone.utc)
     check_in = _parse_dt(rec["check_in_time"])
     hours = round((now - check_in).total_seconds() / 3600, 2)
+    _finalize_checkout(sb, rec["id"], event_id, user.id, now, hours)
+    return {"status": "checked-out", "calculated_hours": hours}
+
+
+def _finalize_checkout(
+    sb,
+    record_id: str,
+    event_id: str,
+    user_id: str,
+    now: datetime,
+    hours: float,
+) -> None:
     sb.table("attendance_records").update({
         "check_out_time": now.isoformat(),
         "calculated_hours": hours,
-        "organizer_status": "checked_out",
+        "organizer_status": "verified",
         "lgu_status": "checked_out",
-    }).eq("id", rec["id"]).execute()
-    return {"status": "checked-out", "calculated_hours": hours}
+    }).eq("id", record_id).execute()
+    cert_email.maybe_auto_send_certificate(event_id, user_id)
 
 
 def _update_status(event_id: str, user_id: str, field: str, status: str) -> None:

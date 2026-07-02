@@ -1,6 +1,6 @@
 import { INCIDENT_STATUSES, ISSUE_CATEGORIES } from '../../shared/constants';
 
-export type MapLayer = 'issues' | 'events' | 'both';
+export type MapLayer = 'issues' | 'events' | 'ecoquest' | 'all';
 
 interface Props {
   mapLayer: MapLayer;
@@ -11,18 +11,26 @@ interface Props {
   onStatusChange: (value: string) => void;
   incidentCount: number;
   eventCount: number;
+  ecoquestCount: number;
 }
 
 const LAYERS: { id: MapLayer; label: string }[] = [
   { id: 'issues', label: 'Issues' },
   { id: 'events', label: 'Events' },
-  { id: 'both', label: 'Both' },
+  { id: 'ecoquest', label: 'EcoQuest' },
+  { id: 'all', label: 'All' },
 ];
 
-function countLabel(mapLayer: MapLayer, incidentCount: number, eventCount: number) {
+function countLabel(
+  mapLayer: MapLayer,
+  incidentCount: number,
+  eventCount: number,
+  ecoquestCount: number,
+) {
   if (mapLayer === 'issues') return `${incidentCount} issue${incidentCount === 1 ? '' : 's'}`;
   if (mapLayer === 'events') return `${eventCount} event${eventCount === 1 ? '' : 's'}`;
-  return `${incidentCount} issue${incidentCount === 1 ? '' : 's'} · ${eventCount} event${eventCount === 1 ? '' : 's'}`;
+  if (mapLayer === 'ecoquest') return `${ecoquestCount} quest${ecoquestCount === 1 ? '' : 's'}`;
+  return `${incidentCount} issue${incidentCount === 1 ? '' : 's'} · ${eventCount} event${eventCount === 1 ? '' : 's'} · ${ecoquestCount} quest${ecoquestCount === 1 ? '' : 's'}`;
 }
 
 export function MapFilterBar({
@@ -34,8 +42,9 @@ export function MapFilterBar({
   onStatusChange,
   incidentCount,
   eventCount,
+  ecoquestCount,
 }: Props) {
-  const showIssueFilters = mapLayer === 'issues' || mapLayer === 'both';
+  const showIssueFilters = mapLayer === 'issues' || mapLayer === 'all';
 
   return (
     <div className="map-filter-bar-inner pointer-events-auto w-full">
@@ -85,7 +94,9 @@ export function MapFilterBar({
           </>
         ) : null}
 
-        <span className="map-filter-count shadow-product">{countLabel(mapLayer, incidentCount, eventCount)}</span>
+        <span className="map-filter-count shadow-product">
+          {countLabel(mapLayer, incidentCount, eventCount, ecoquestCount)}
+        </span>
     </div>
   );
 }

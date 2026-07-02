@@ -6,10 +6,12 @@ import { EventDetailHeader } from '../components/events/EventDetailHeader';
 import { EventAttendanceQrPanel } from '../components/events/EventAttendanceQrPanel';
 import { EventMapEmbed } from '../components/events/EventMapEmbed';
 import { EventVolunteerSidebar } from '../components/events/EventVolunteerSidebar';
+import { OrganizerAttendancePanel } from '../components/events/OrganizerAttendancePanel';
 import { EventPhotoMasonry } from '../components/events/EventPhotoMasonry';
 import { api } from '../lib/api';
 import { isLguPortalRole } from '../lib/auth';
 import { useAuth } from '../hooks/useAuth';
+import { useCleanupEventLoad } from '../hooks/useCleanupEventLoad';
 import { useProfile } from '../hooks/useProfile';
 import {
   canOrganizerEndEvent,
@@ -70,16 +72,18 @@ function EventDescription({ description }: { description?: string }) {
   );
 }
 
-type SidebarTab = 'details' | 'volunteers';
+type SidebarTab = 'details' | 'volunteers' | 'attendance';
 
 function EventSidebarTabs({
   active,
   onChange,
   volunteerCount,
+  showAttendance,
 }: {
   active: SidebarTab;
   onChange: (tab: SidebarTab) => void;
   volunteerCount: number;
+  showAttendance?: boolean;
 }) {
   const tabClass = (selected: boolean) =>
     `flex-1 border-b-2 px-1 pb-2.5 text-xs transition ${
@@ -108,6 +112,17 @@ function EventSidebarTabs({
       >
         Volunteers{volunteerCount > 0 ? ` (${volunteerCount})` : ''}
       </button>
+      {showAttendance ? (
+        <button
+          type="button"
+          role="tab"
+          aria-selected={active === 'attendance'}
+          className={tabClass(active === 'attendance')}
+          onClick={() => onChange('attendance')}
+        >
+          Attendance
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -130,8 +145,9 @@ export default function EventDetailPage() {
   const navigate = useNavigate();
   const { user, ready: authReady } = useAuth();
   const { profile } = useProfile();
-  const [event, setEvent] = useState<PublicEventDetail | null>(null);
-  const [goingCount, setGoingCount] = useState(0);
+  const userId = user?.uid ?? null;
+  const canLoad = Boolean(authReady && userId && eventId);
+  const { event, setEvent, loading, error, goingCount } = useCleanupEventLoad(eventId, canLoad);
   const [participants, setParticipants] = useState<EventParticipant[]>([]);
   const [participantsLoading, setParticipantsLoading] = useState(false);
   const [participantsError, setParticipantsError] = useState('');
@@ -139,8 +155,6 @@ export default function EventDetailPage() {
   const [canUpload, setCanUpload] = useState(false);
   const [canModerate, setCanModerate] = useState(false);
   const [canUnhide, setCanUnhide] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
   const [showQr, setShowQr] = useState(false);
   const [qrMode, setQrMode] = useState<AttendanceQrMode>('check-in');
@@ -150,44 +164,13 @@ export default function EventDetailPage() {
 
   useEffect(() => {
     if (!authReady) return;
-    if (!user) {
+    if (!userId) {
       navigate(`/login?next=${encodeURIComponent(loginNext)}`, { replace: true });
     }
-  }, [authReady, user, navigate, loginNext]);
+  }, [authReady, userId, navigate, loginNext]);
 
   useEffect(() => {
-    if (!eventId || !user) return;
-
-    let cancelled = false;
-    setLoading(true);
-    setError('');
-
-    api<PublicEventDetail>(`/api/cleanup-events/${eventId}`)
-      .then((data) => {
-        if (cancelled) return;
-        // #region agent log
-        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'org-logo-only',location:'EventDetailPage.tsx:loadEvent',message:'event loaded',data:{eventId,organizerLogoUrl:data.organizer_logo_url??null,organizerName:data.organizer_name??null},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-        setEvent(data);
-        setGoingCount(data.going_count ?? 0);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setEvent(null);
-          setError('Event not found.');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [eventId, user]);
-
-  useEffect(() => {
-    if (!eventId || !user || !event || event.approval_status !== 'approved') {
+    if (!eventId || !userId || !event || event.approval_status !== 'approved') {
       setParticipants([]);
       setParticipantsError('');
       setParticipantsLoading(false);
@@ -215,10 +198,10 @@ export default function EventDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [eventId, user, event?.approval_status]);
+  }, [eventId, userId, event?.approval_status]);
 
   useEffect(() => {
-    if (!eventId || !user) return;
+    if (!eventId || !userId) return;
 
     let cancelled = false;
     api<EventPhotosResponse>(`/api/cleanup-events/${eventId}/photos`)
@@ -242,9 +225,9 @@ export default function EventDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [eventId, user, profile?.role]);
+  }, [eventId, userId, profile?.role]);
 
-  if (!authReady || !user) {
+  if (!authReady || !userId) {
     return (
       <div className="min-h-screen bg-canvas-parchment">
         <GlobalNav />
@@ -277,12 +260,13 @@ export default function EventDetailPage() {
     );
   }
 
-  const startLabel = formatDateTime(event.scheduled_start);
-  const endLabel = formatDateTime(event.scheduled_end);
-  const isOrganizer = profile?.id === event.organizer_user_id;
-  const attendancePhase = getEventAttendancePhase(event);
-  const eventEnded = isEventEnded(event.scheduled_end) || Boolean(event.checkout_qr_code_token);
-  const organizerCanEnd = canOrganizerEndEvent(event);
+  const currentEvent = event;
+  const startLabel = formatDateTime(currentEvent.scheduled_start);
+  const endLabel = formatDateTime(currentEvent.scheduled_end);
+  const isOrganizer = profile?.id === currentEvent.organizer_user_id;
+  const attendancePhase = getEventAttendancePhase(currentEvent);
+  const eventEnded = isEventEnded(currentEvent.scheduled_end) || Boolean(currentEvent.checkout_qr_code_token);
+  const organizerCanEnd = canOrganizerEndEvent(currentEvent);
 
   async function handleEndEvent() {
     if (
@@ -318,12 +302,12 @@ export default function EventDetailPage() {
     setQrMode('check-in');
     setShowQr(true);
     // #region agent log
-    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'attendance-qr',location:'EventDetailPage.tsx:openCheckInQr',message:'check-in qr opened',data:{eventId,attendancePhase,eventStarted:isEventStarted(event.scheduled_start)},timestamp:Date.now(),hypothesisId:'H-checkin'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'attendance-qr',location:'EventDetailPage.tsx:openCheckInQr',message:'check-in qr opened',data:{eventId,attendancePhase,eventStarted:isEventStarted(currentEvent.scheduled_start)},timestamp:Date.now(),hypothesisId:'H-checkin'})}).catch(()=>{});
     // #endregion
   }
 
   async function openCheckOutQr() {
-    let checkoutToken = event.checkout_qr_code_token;
+    let checkoutToken = currentEvent.checkout_qr_code_token;
     if (!checkoutToken && eventId) {
       try {
         const refreshed = await api<PublicEventDetail>(`/api/cleanup-events/${eventId}`);
@@ -424,6 +408,7 @@ export default function EventDetailPage() {
                 active={sidebarTab}
                 onChange={setSidebarTab}
                 volunteerCount={participants.length}
+                showAttendance={isOrganizer}
               />
 
               {sidebarTab === 'details' ? (
@@ -478,7 +463,7 @@ export default function EventDetailPage() {
 
                   <EventDescription description={event.description} />
                 </div>
-              ) : (
+              ) : sidebarTab === 'volunteers' ? (
                 <div className="mt-4" role="tabpanel">
                   <EventVolunteerSidebar
                     participants={participants}
@@ -488,6 +473,10 @@ export default function EventDetailPage() {
                     compact
                     tabPanel
                   />
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <OrganizerAttendancePanel eventId={event.id} active={sidebarTab === 'attendance'} />
                 </div>
               )}
             </div>

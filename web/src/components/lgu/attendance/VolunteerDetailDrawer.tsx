@@ -37,15 +37,9 @@ export function VolunteerDetailDrawer({ volunteer, permissions, onClose }: Props
         </div>
 
         <div className="mt-6 space-y-4 text-sm">
-          <div className="flex gap-3">
-            <div>
-              <p className="text-xs text-ink-muted-48">Organizer status</p>
-              <StatusBadge status={volunteer.organizer_status} />
-            </div>
-            <div>
-              <p className="text-xs text-ink-muted-48">LGU status</p>
-              <StatusBadge status={volunteer.lgu_status} />
-            </div>
+          <div>
+            <p className="text-xs text-ink-muted-48">Tracker status</p>
+            <StatusBadge status={volunteer.tracker_status === 'completed' ? 'verified' : volunteer.tracker_status} />
           </div>
 
           <div>

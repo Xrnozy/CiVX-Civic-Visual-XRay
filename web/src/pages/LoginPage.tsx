@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { ButtonPrimary } from '../components/ui/Buttons';
-import { isFirebaseConfigured } from '../lib/firebase';
-import { useAuth } from '../hooks/useAuth';
+import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase';
+import { useAuth, ensureSignedOutForCredential, signOutUser } from '../hooks/useAuth';
 import { useProfile } from '../hooks/useProfile';
 import {
   authErrorMessage,
@@ -34,13 +34,13 @@ export default function LoginPage() {
   }, [sessionFromUrl]);
 
   useEffect(() => {
-    if (!ready || !user || !profileReady) return;
+    if (!ready || !user || !profileReady || loading) return;
     if (profile && !isRegistrationComplete(profile)) {
       navigate('/register/complete', { replace: true });
       return;
     }
     navigate(nextPath || (profile ? redirectPathForRole(profile.role) : '/map'), { replace: true });
-  }, [ready, user, profile, profileReady, navigate, nextPath]);
+  }, [ready, user, profile, profileReady, navigate, nextPath, loading]);
 
   async function afterSignIn() {
     const profile = await persistAuthSession(
@@ -64,6 +64,7 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
+      await ensureSignedOutForCredential(email);
       const cred = await signInWithEmail(email, password);
       const profile = await persistAuthSession(cred);
       if (!isRegistrationComplete(profile)) {
@@ -86,6 +87,9 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
+      if (getFirebaseAuth().currentUser) {
+        await signOutUser();
+      }
       const cred = await signInWithGoogle();
       const profile = await persistAuthSession(cred);
       if (!isRegistrationComplete(profile)) {

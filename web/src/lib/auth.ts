@@ -11,7 +11,7 @@ import {
   UserCredential,
 } from 'firebase/auth';
 import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
-import { api } from './api';
+import { clearAuthTokenCache, resolveAuthToken } from './api';
 import type { AccountType, UserProfile } from '../types/user';
 
 /** Roles that use the LGU portal (/lgu) — cannot upload event gallery photos. */
@@ -58,6 +58,7 @@ export interface CompleteRegistrationPayload {
 }
 
 export async function completeRegistration(payload: CompleteRegistrationPayload): Promise<UserProfile> {
+  const { api } = await import('./api');
   return api<UserProfile>('/api/users/complete-registration', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -65,30 +66,53 @@ export async function completeRegistration(payload: CompleteRegistrationPayload)
 }
 
 export async function fetchProfileAfterAuth(): Promise<UserProfile> {
+  await resolveAuthToken(true);
+  const { api } = await import('./api');
   return api<UserProfile>('/api/users/me');
 }
 
 /** Keep localStorage token in sync with the Firebase client session. */
 export async function syncAuthTokenFromFirebase(user: User | null): Promise<string | null> {
   if (!user) {
+    clearAuthTokenCache();
     localStorage.removeItem('civx_token');
     return null;
   }
-  const token = await user.getIdToken();
+  clearAuthTokenCache();
+  const token = await user.getIdToken(true);
   localStorage.setItem('civx_token', token);
+  await resolveAuthToken(true);
   return token;
 }
 
 export function startAuthTokenSync(): () => void {
   if (!isFirebaseConfigured) return () => {};
+  let lastUid: string | null = null;
   return onAuthStateChanged(getFirebaseAuth(), (user) => {
+    const uid = user?.uid ?? null;
+    if (uid !== lastUid) {
+      clearAuthTokenCache();
+      lastUid = uid;
+    }
     void syncAuthTokenFromFirebase(user);
   });
 }
 
 export async function persistAuthSession(cred: UserCredential): Promise<UserProfile> {
+  clearAuthTokenCache();
   await syncAuthTokenFromFirebase(cred.user);
-  return fetchProfileAfterAuth();
+  try {
+    const profile = await fetchProfileAfterAuth();
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'auth.ts:persistAuthSession',message:'profile fetched',data:{firebaseUid:cred.user.uid.slice(0,8),email:cred.user.email?.slice(0,3)+'***',registrationCompleted:profile.registration_completed,role:profile.role},timestamp:Date.now(),hypothesisId:'H-token'})}).catch(()=>{});
+    // #endregion
+    return profile;
+  } catch (err) {
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'auth.ts:persistAuthSession',message:'profile fetch failed',data:{error:err instanceof Error?err.message.slice(0,200):'unknown'},timestamp:Date.now(),hypothesisId:'H5'})}).catch(()=>{});
+    // #endregion
+    throw err;
+  }
 }
 
 let redirectResultHandled = false;
@@ -172,6 +196,18 @@ export class GoogleRedirectStartedError extends Error {
   }
 }
 
+export function registrationErrorMessage(err: unknown): string {
+  if (err instanceof Error) {
+    try {
+      const json = JSON.parse(err.message) as { detail?: string };
+      if (typeof json.detail === 'string') return json.detail;
+    } catch {
+      if (err.message && !err.message.startsWith('{')) return err.message;
+    }
+  }
+  return 'Registration failed. Please try again.';
+}
+
 export function authErrorMessage(err: unknown): string {
   if (err instanceof GoogleRedirectStartedError) {
     return 'Redirecting to Google sign-in…';
@@ -218,7 +254,7 @@ export function authErrorMessage(err: unknown): string {
     case 'auth/credential-already-in-use':
       return 'This sign-in method is already linked to another account.';
     case 'auth/unauthorized-domain':
-      return 'This domain is not authorized. Add localhost to Firebase Console → Authentication → Settings → Authorized domains.';
+      return 'This domain is not authorized. Add civx.xrnozy.me and localhost to Firebase Console → Authentication → Settings → Authorized domains.';
     default:
       if (import.meta.env.DEV && code) {
         return `Authentication failed (${code}). See browser console for details.`;

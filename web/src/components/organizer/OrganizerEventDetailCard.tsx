@@ -3,13 +3,14 @@ import { Link } from 'react-router-dom';
 import { CleanupRejectionReason } from '../lgu/CleanupRejectionReason';
 import { formatEventSchedulePhase, schedulePhaseClass } from '../../lib/eventSchedule';
 import type { EventParticipant } from '../../types/eventDetail';
+import type { LocationAddressFields } from '../../types/pickedAddress';
 import { EventVolunteerSidebar } from '../events/EventVolunteerSidebar';
 
-export interface OrganizerCleanupEvent {
+export interface OrganizerCleanupEvent extends LocationAddressFields {
   id: string;
   title: string;
   description?: string;
-  barangay?: string;
+  province?: string;
   scheduled_start: string;
   scheduled_end?: string;
   approval_status: string;
@@ -121,17 +122,27 @@ export function OrganizerEventDetailCard({
 
       <div className={embedded ? 'space-y-4 p-4' : 'space-y-4 pt-4'}>
         <div>
-          <p className="text-sm font-medium text-ink">Location pin</p>
+          <p className="text-sm font-medium text-ink">Location</p>
           {located ? (
-            <div className="mt-2 overflow-hidden rounded-[16px] border border-hairline">
-              <iframe
-                title={`Map pin for ${event.title}`}
-                src={mapsEmbedUrl(Number(event.latitude), Number(event.longitude))}
-                className="pointer-events-none h-[180px] w-full border-0"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            </div>
+            <>
+              <div className="mt-2 overflow-hidden rounded-[16px] border border-hairline">
+                <iframe
+                  title={`Map pin for ${event.title}`}
+                  src={mapsEmbedUrl(Number(event.latitude), Number(event.longitude))}
+                  className="pointer-events-none h-[180px] w-full border-0"
+                  loading="lazy"
+                  referrerPolicy="no-referrer-when-downgrade"
+                />
+              </div>
+              {(event.street?.trim() || event.barangay?.trim() || event.city?.trim()) ? (
+                <p className="mt-2 text-sm text-ink-muted-80">
+                  {[event.street, event.barangay, event.city]
+                    .map((part) => part?.trim())
+                    .filter(Boolean)
+                    .join(', ')}
+                </p>
+              ) : null}
+            </>
           ) : (
             <div className="mt-2 rounded-[16px] border border-dashed border-hairline bg-canvas-parchment px-4 py-10 text-center text-sm text-ink-muted-48">
               No location pinned for this drive.
@@ -149,8 +160,16 @@ export function OrganizerEventDetailCard({
             <dd className="min-w-0 truncate text-right font-medium text-ink">{organizerName}</dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="shrink-0 text-ink-muted-48">Location</dt>
-            <dd className="min-w-0 truncate text-right font-medium text-ink">{event.barangay || '—'}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Street</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{event.street?.trim() || '—'}</dd>
+          </div>
+          <div className="flex justify-between gap-4 border-b border-hairline pb-2">
+            <dt className="shrink-0 text-ink-muted-48">Barangay</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{event.barangay?.trim() || '—'}</dd>
+          </div>
+          <div className="flex justify-between gap-4 border-b border-hairline pb-2">
+            <dt className="shrink-0 text-ink-muted-48">City</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{event.city?.trim() || '—'}</dd>
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2">
             <dt className="text-ink-muted-48">Status</dt>

@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useProfile } from '../../hooks/useProfile';
 import { ButtonPrimary } from '../../components/ui/Buttons';
-import type { UserSummary } from '../../types/user';
+import type { DeleteAccountResult, UserSummary } from '../../types/user';
 import { LGU_ASSIGNABLE_ROLE_LABELS } from '../../types/user';
 
 function initials(name: string) {
@@ -38,6 +38,7 @@ export default function LGUStaffPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadTeam = useCallback(() => {
     api<UserSummary[]>('/api/users/lgu-team').then(setTeam).catch(() => setTeam([]));
@@ -63,6 +64,29 @@ export default function LGUStaffPage() {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {
       setSearching(false);
+    }
+  }
+
+  async function deleteAccount(user: UserSummary) {
+    setDeletingId(user.id);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await api<DeleteAccountResult>(`/api/users/${user.id}`, { method: 'DELETE' });
+      const parts = Object.entries(result.summary)
+        .filter(([, count]) => count > 0)
+        .map(([key, count]) => `${count} ${key.replace(/_/g, ' ')}`);
+      setSuccess(
+        parts.length > 0
+          ? `Deleted ${user.full_name}. Removed ${parts.join(', ')}.`
+          : `Deleted ${user.full_name}.`,
+      );
+      loadTeam();
+      setSearchResults((prev) => prev.filter((row) => row.id !== user.id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete account');
+    } finally {
+      setDeletingId(null);
     }
   }
 
@@ -106,8 +130,8 @@ export default function LGUStaffPage() {
             Staff access
           </h1>
           <p className="mt-3 max-w-2xl text-ink-muted-80">
-            Promote registered users to LGU staff without touching the database. They sign up as a community member
-            first — then you grant access here.
+            Promote registered users to LGU staff without touching the database. Search for any account to
+            change roles or permanently delete it — including their reports, cleanup events, photos, and sign-in.
           </p>
           <div className="mt-6 flex flex-wrap gap-4">
             <div className="stat-card min-w-[140px] flex-1">
@@ -170,7 +194,9 @@ export default function LGUStaffPage() {
                     user={user}
                     currentUserId={profile.id}
                     updating={updatingId === user.id}
+                    deleting={deletingId === user.id}
                     onSetRole={setRole}
+                    onDelete={deleteAccount}
                   />
                 ))}
               </div>
@@ -200,11 +226,19 @@ export default function LGUStaffPage() {
                     {user.id === profile.id ? (
                       <span className="text-sm text-ink-muted-48">You</span>
                     ) : (
-                      <RoleSelect
-                        value={user.role}
-                        disabled={updatingId === user.id}
-                        onChange={(role) => setRole(user.id, role)}
-                      />
+                      <div className="flex flex-col items-end gap-2">
+                        <RoleSelect
+                          value={user.role}
+                          disabled={updatingId === user.id || deletingId === user.id}
+                          onChange={(role) => setRole(user.id, role)}
+                        />
+                        <DeleteAccountButton
+                          user={user}
+                          disabled={updatingId === user.id}
+                          deleting={deletingId === user.id}
+                          onDelete={deleteAccount}
+                        />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -231,12 +265,16 @@ function UserRoleRow({
   user,
   currentUserId,
   updating,
+  deleting,
   onSetRole,
+  onDelete,
 }: {
   user: UserSummary;
   currentUserId: string;
   updating: boolean;
+  deleting: boolean;
   onSetRole: (userId: string, role: string) => void;
+  onDelete: (user: UserSummary) => Promise<void>;
 }) {
   return (
     <div className="rounded-[18px] border border-hairline bg-canvas p-4">
@@ -253,11 +291,17 @@ function UserRoleRow({
       {user.id === currentUserId ? (
         <p className="mt-3 text-sm text-ink-muted-48">This is your account</p>
       ) : (
-        <div className="mt-3">
+        <div className="mt-3 space-y-3">
           <RoleSelect
             value={user.role}
-            disabled={updating}
+            disabled={updating || deleting}
             onChange={(role) => onSetRole(user.id, role)}
+          />
+          <DeleteAccountButton
+            user={user}
+            disabled={updating}
+            deleting={deleting}
+            onDelete={onDelete}
           />
         </div>
       )}
@@ -294,6 +338,79 @@ function RoleSelect({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+function DeleteAccountButton({
+  user,
+  disabled,
+  deleting,
+  onDelete,
+}: {
+  user: UserSummary;
+  disabled?: boolean;
+  deleting?: boolean;
+  onDelete: (user: UserSummary) => Promise<void>;
+}) {
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState('');
+
+  const expected = user.email?.trim() || user.full_name.trim();
+  const canDelete = confirmText.trim().toLowerCase() === expected.toLowerCase();
+
+  function reset() {
+    setConfirmOpen(false);
+    setConfirmText('');
+  }
+
+  if (!confirmOpen) {
+    return (
+      <button
+        type="button"
+        className="text-sm font-medium text-red-600 hover:text-red-700 disabled:opacity-50"
+        disabled={disabled || deleting}
+        onClick={() => setConfirmOpen(true)}
+      >
+        Delete account…
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-[14px] border border-red-200 bg-red-50 p-3">
+      <p className="text-sm font-medium text-red-800">Permanently delete this account?</p>
+      <p className="mt-1 text-xs leading-relaxed text-red-700/90">
+        Removes their reports, cleanup events, event photos, volunteer sign-ups, attendance, EcoQuest
+        submissions, and Firebase login. Type <strong>{expected}</strong> to confirm.
+      </p>
+      <input
+        className="auth-input mt-3"
+        placeholder={expected}
+        value={confirmText}
+        onChange={(e) => setConfirmText(e.target.value)}
+        autoFocus
+      />
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          className="rounded-full border border-hairline px-3 py-1.5 text-sm text-ink-muted-80"
+          onClick={reset}
+          disabled={deleting}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="rounded-full bg-red-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+          disabled={!canDelete || deleting}
+          onClick={() => {
+            void onDelete(user).finally(reset);
+          }}
+        >
+          {deleting ? 'Deleting…' : 'Delete everything'}
+        </button>
+      </div>
     </div>
   );
 }

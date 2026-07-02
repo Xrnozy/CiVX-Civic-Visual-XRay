@@ -24,6 +24,9 @@ class CleanupEventCreate(BaseModel):
     latitude: float
     longitude: float
     barangay: str | None = None
+    street: str | None = None
+    city: str | None = None
+    province: str | None = None
     scheduled_start: str
     scheduled_end: str
     max_volunteers: int = 50
@@ -78,6 +81,10 @@ class AttendanceRejectBody(BaseModel):
     reason: str | None = None
 
 
+class CertificateSettingsBody(BaseModel):
+    auto_send_certificates: bool
+
+
 class EcoQuestPartyEntry(BaseModel):
     type: Literal["user", "external", "manual"]
     ref_id: str | None = None
@@ -122,6 +129,7 @@ class EcoQuestSubmit(BaseModel):
     after_photo_url: str | None = None
     latitude: float | None = None
     longitude: float | None = None
+    qr_code_id: str | None = None
 
 
 class RouteSessionCreate(BaseModel):

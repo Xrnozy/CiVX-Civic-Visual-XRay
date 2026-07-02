@@ -5,6 +5,7 @@ import { EventBannerUpload } from '../../components/events/EventBannerUpload';
 import {
   FORM_FIELD_INPUT,
   LocationPickerSection,
+  hasDetectedBarangay,
   hasValidLocation,
 } from '../../components/map/LocationPickerSection';
 import {
@@ -22,8 +23,9 @@ import {
 } from '../../lib/eventSchedule';
 import { useProfile } from '../../hooks/useProfile';
 import { useOrganizerCleanup } from './OrganizerLayout';
-import { fetchBarangayFromCoordinates } from '../../lib/geocoding';
+import { fetchAddressFromCoordinates } from '../../lib/geocoding';
 import { formatDefaultMapCoordinates } from '../../shared/constants';
+import { formatLocationAddress } from '../../types/pickedAddress';
 
 interface CleanupEvent extends OrganizerCleanupEvent {
   max_volunteers: number;
@@ -36,6 +38,9 @@ const EMPTY_FORM = {
   title: '',
   description: '',
   barangay: '',
+  street: '',
+  city: '',
+  province: '',
   scheduled_start: '',
   scheduled_end: '',
   max_volunteers: 50,
@@ -110,20 +115,25 @@ export default function OrganizerCleanupPage() {
       setFormError('Pin the cleanup location on the map before submitting.');
       return;
     }
+    if (!hasDetectedBarangay(form)) {
+      setFormError('Wait for barangay detection to finish before submitting.');
+      return;
+    }
     setFormError('');
     setCreating(true);
     try {
-      let barangay = form.barangay.trim();
-      if (!barangay) {
-        const resolved = await fetchBarangayFromCoordinates(
-          Number(form.latitude),
-          Number(form.longitude),
-        );
-        barangay = resolved?.trim() || '';
+      let address = {
+        barangay: form.barangay.trim(),
+        street: form.street.trim(),
+        city: form.city.trim(),
+        province: form.province.trim(),
+      };
+      if (!address.barangay) {
+        address = await fetchAddressFromCoordinates(Number(form.latitude), Number(form.longitude));
       }
       const payload = {
         ...form,
-        barangay: barangay || undefined,
+        ...address,
         latitude: Number(form.latitude),
         longitude: Number(form.longitude),
         ...(bannerUrl ? { banner_url: bannerUrl } : {}),
@@ -254,12 +264,25 @@ export default function OrganizerCleanupPage() {
                 embedded
                 latitude={form.latitude}
                 longitude={form.longitude}
-                barangay={form.barangay}
-                autoBarangay
-                onBarangayChange={(barangay) => setForm((prev) => ({ ...prev, barangay }))}
+                address={{
+                  barangay: form.barangay,
+                  street: form.street,
+                  city: form.city,
+                  province: form.province,
+                }}
+                autoDetectAddress
+                onAddressChange={(addr) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    barangay: addr.barangay,
+                    street: addr.street,
+                    city: addr.city,
+                    province: addr.province,
+                  }))
+                }
                 onChange={(lat, lng) => setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
                 label="Cleanup location"
-                hint="Pin where volunteers should meet. Barangay is detected automatically from the pin."
+                hint="Pin where volunteers should meet. Address fields fill in automatically once barangay is detected."
               />
             </div>
 
@@ -333,13 +356,13 @@ export default function OrganizerCleanupPage() {
                   <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">{ev.title}</p>
                     <p className="mt-1 text-sm text-ink-muted-48">
-                      {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
+                      {formatLocationAddress(ev) || ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
                     </p>
-                    {ev.latitude != null && ev.longitude != null && (
+                    {ev.latitude != null && ev.longitude != null && !formatLocationAddress(ev) ? (
                       <p className="mt-1 text-xs text-ink-muted-48">
-                        Location: {Number(ev.latitude).toFixed(5)}, {Number(ev.longitude).toFixed(5)}
+                        Pin: {Number(ev.latitude).toFixed(5)}, {Number(ev.longitude).toFixed(5)}
                       </p>
-                    )}
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
                     {listBadge ? (

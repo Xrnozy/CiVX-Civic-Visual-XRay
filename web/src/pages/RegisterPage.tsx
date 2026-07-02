@@ -3,22 +3,29 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { ButtonDark, ButtonPrimary } from '../components/ui/Buttons';
 import { InviteQrCapture } from '../components/auth/InviteQrCapture';
-import { ProfileImageUpload, uploadProfileImage } from '../components/auth/ProfileImageUpload';
+import { ProfileImageUpload } from '../components/auth/ProfileImageUpload';
 import { WorkerTypeSelect } from '../components/auth/WorkerTypeSelect';
-import { isFirebaseConfigured } from '../lib/firebase';
-import { useAuth } from '../hooks/useAuth';
+import { getFirebaseAuth, isFirebaseConfigured } from '../lib/firebase';
+import { useAuth, ensureSignedOutForCredential, signOutUser } from '../hooks/useAuth';
 import { useProfile } from '../hooks/useProfile';
 import {
   authErrorMessage,
   completeRegistration,
-  fetchProfileAfterAuth,
   GoogleRedirectStartedError,
   isRegistrationComplete,
   persistAuthSession,
   redirectPathForRole,
   registerWithEmail,
+  registrationErrorMessage,
   signInWithGoogle,
 } from '../lib/auth';
+import {
+  buildPendingRegistration,
+  clearPendingRegistration,
+  finishPendingRegistration,
+  isPendingRegistrationComplete,
+  savePendingRegistration,
+} from '../lib/pendingRegistration';
 import { api } from '../lib/api';
 import type { AccountType, InviteValidation, PublicWorkerType } from '../types/user';
 import { ACCOUNT_TYPE_LABELS } from '../types/user';
@@ -77,19 +84,30 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { user, ready } = useAuth();
-  const { profile, ready: profileReady } = useProfile();
+  const { profile, ready: profileReady, refresh } = useProfile();
 
   const steps: Step[] = ['type', 'details', 'credentials'];
   const stepIndex = steps.indexOf(step);
 
   useEffect(() => {
     if (!ready || !user || !profileReady || loading) return;
-    if (sessionStorage.getItem('civx_pending_registration')) return;
-    if (step !== 'type') return;
-    if (profile && !isRegistrationComplete(profile)) {
-      navigate('/register/complete', { replace: true });
+    const nextAfterRegister = searchParams.get('next');
+    const invite = searchParams.get('invite');
+    const completeQuery = invite ? `?invite=${encodeURIComponent(invite)}` : '';
+    if (profile && isRegistrationComplete(profile)) {
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'RegisterPage.tsx:redirect',message:'already registered',data:{role:profile.role,next:nextAfterRegister},timestamp:Date.now(),hypothesisId:'H-register-redirect',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
+      navigate(nextAfterRegister || redirectPathForRole(profile.role), { replace: true });
+      return;
     }
-  }, [ready, user, profile, profileReady, loading, step, navigate]);
+    if (!isRegistrationComplete(profile)) {
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'RegisterPage.tsx:redirect',message:'needs complete',data:{hasPending:Boolean(sessionStorage.getItem('civx_pending_registration'))},timestamp:Date.now(),hypothesisId:'H-register-redirect',runId:'post-fix'})}).catch(()=>{});
+      // #endregion
+      navigate(`/register/complete${completeQuery}`, { replace: true });
+    }
+  }, [ready, user, profile, profileReady, loading, navigate, searchParams]);
 
   useEffect(() => {
     if (sessionFromUrl) {
@@ -117,35 +135,27 @@ export default function RegisterPage() {
     setStep('details');
   }
 
-  function buildPendingPayload(overrides?: { organization_logo_url?: string; profile_photo_url?: string }) {
+  function buildPendingInput() {
     return {
-      account_type: accountType,
-      full_name: fullName,
-      phone_number: phone,
+      accountType,
+      fullName,
+      phone,
       barangay,
-      organization_name: organizationName,
-      organization_logo_url: overrides?.organization_logo_url ?? organizationLogoUrl,
-      profile_photo_url: overrides?.profile_photo_url ?? profilePhotoUrl,
-      invite_token: inviteToken,
-      public_worker_type: publicWorkerType,
+      organizationName,
+      organizationLogoUrl,
+      organizationLogoFile,
+      profilePhotoUrl,
+      profilePhotoFile,
+      inviteToken,
+      publicWorkerType,
     };
   }
 
-  async function resolveMediaUrls() {
-    let logoUrl = organizationLogoUrl.startsWith('blob:') ? '' : organizationLogoUrl;
-    let photoUrl = profilePhotoUrl.startsWith('blob:') ? '' : profilePhotoUrl;
-    if (organizationLogoFile) logoUrl = await uploadProfileImage(organizationLogoFile);
-    if (profilePhotoFile) photoUrl = await uploadProfileImage(profilePhotoFile);
-    if (logoUrl.startsWith('blob:')) logoUrl = '';
-    if (photoUrl.startsWith('blob:')) photoUrl = '';
-    setOrganizationLogoUrl(logoUrl);
-    setProfilePhotoUrl(photoUrl);
-    return { logoUrl, photoUrl };
-  }
-
-  function storePendingRegistration() {
-    if (!accountType) return;
-    sessionStorage.setItem('civx_pending_registration', JSON.stringify(buildPendingPayload()));
+  async function persistPendingRegistration() {
+    const pending = await buildPendingRegistration(buildPendingInput());
+    if (!pending) return null;
+    savePendingRegistration(pending);
+    return pending;
   }
 
   async function handleCredentials(e: FormEvent) {
@@ -162,26 +172,23 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
+      const pending = await persistPendingRegistration();
+      if (!pending) return;
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'RegisterPage.tsx:handleCredentials',message:'pending saved',data:{accountType:pending.account_type,complete:isPendingRegistrationComplete(pending)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      await ensureSignedOutForCredential(email);
       const cred = await registerWithEmail(email, password, fullName);
       await persistAuthSession(cred);
-      const { logoUrl, photoUrl } = await resolveMediaUrls();
-      const profile = await completeRegistration({
-        account_type: accountType,
-        full_name: fullName,
-        phone_number: phone,
-        barangay,
-        organization_name: accountType === 'organizer' ? organizationName : undefined,
-        organization_logo_url: accountType === 'organizer' ? logoUrl : undefined,
-        profile_photo_url: photoUrl || undefined,
-        invite_token: accountType === 'street_sweeper' ? inviteToken : undefined,
-        public_worker_type: accountType === 'street_sweeper' ? publicWorkerType || undefined : undefined,
-      });
-      sessionStorage.removeItem('civx_pending_registration');
+      const payload = await finishPendingRegistration(pending);
+      const profile = await completeRegistration(payload);
+      clearPendingRegistration();
+      await refresh();
       const nextAfterRegister = searchParams.get('next');
-      navigate(nextAfterRegister || redirectPathForRole(profile.role));
+      navigate(nextAfterRegister || redirectPathForRole(profile.role), { replace: true });
     } catch (err) {
       if (!(err instanceof GoogleRedirectStartedError)) {
-        setError(authErrorMessage(err));
+        setError(registrationErrorMessage(err) || authErrorMessage(err));
       }
     } finally {
       setLoading(false);
@@ -201,26 +208,32 @@ export default function RegisterPage() {
     setLoading(true);
     setError('');
     try {
+      const pending = await persistPendingRegistration();
+      if (!pending) return;
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',location:'RegisterPage.tsx:handleGoogle',message:'pending saved before google',data:{accountType:pending.account_type,complete:isPendingRegistrationComplete(pending)},timestamp:Date.now(),hypothesisId:'H1'})}).catch(()=>{});
+      // #endregion
+      if (getFirebaseAuth().currentUser) {
+        await signOutUser();
+      }
       const cred = await signInWithGoogle();
       await persistAuthSession(cred);
-      const { logoUrl, photoUrl } = await resolveMediaUrls();
-      sessionStorage.setItem(
-        'civx_pending_registration',
-        JSON.stringify(buildPendingPayload({ organization_logo_url: logoUrl, profile_photo_url: photoUrl })),
-      );
-      const profile = await fetchProfileAfterAuth();
-      if (isRegistrationComplete(profile)) {
-        sessionStorage.removeItem('civx_pending_registration');
+      if (isPendingRegistrationComplete(pending)) {
+        const payload = await finishPendingRegistration(pending);
+        const profile = await completeRegistration(payload);
+        clearPendingRegistration();
+        await refresh();
         navigate(searchParams.get('next') || redirectPathForRole(profile.role));
         return;
       }
-      navigate('/register/complete');
+      navigate('/register/complete', { replace: true });
     } catch (err) {
       if (err instanceof GoogleRedirectStartedError) {
         setError('Redirecting to Google sign-in…');
         return;
       }
       setError(authErrorMessage(err));
+    } finally {
       setLoading(false);
     }
   }
@@ -333,8 +346,7 @@ export default function RegisterPage() {
                   return;
                 }
                 setError('');
-                storePendingRegistration();
-                setStep('credentials');
+                void persistPendingRegistration().then(() => setStep('credentials'));
               }}
             >
               <div className="rounded-[14px] border border-hairline bg-canvas-parchment px-4 py-3 text-sm">

@@ -7,7 +7,21 @@ import { ProfileImageUpload } from '../components/auth/ProfileImageUpload';
 import { WorkerTypeSelect } from '../components/auth/WorkerTypeSelect';
 import { useAuth } from '../hooks/useAuth';
 import { useProfile } from '../hooks/useProfile';
-import { completeRegistration, isRegistrationComplete, redirectPathForRole } from '../lib/auth';
+import {
+  completeRegistration,
+  isRegistrationComplete,
+  redirectPathForRole,
+  registrationErrorMessage,
+} from '../lib/auth';
+import {
+  clearPendingRegistration,
+  finishPendingRegistration,
+  isPendingRegistrationComplete,
+  loadPendingRegistration,
+  mergePendingRegistration,
+  savePendingRegistration,
+} from '../lib/pendingRegistration';
+import { tryCompletePendingRegistration } from '../lib/finishRegistrationFlow';
 import { api } from '../lib/api';
 import type { AccountType, InviteValidation, PublicWorkerType } from '../types/user';
 import { ACCOUNT_TYPE_LABELS } from '../types/user';
@@ -34,38 +48,36 @@ export default function CompleteRegistrationPage() {
   const autoSubmitted = useRef(false);
   const navigate = useNavigate();
   const { user, ready: authReady } = useAuth();
+  const userId = user?.uid ?? null;
   const { profile, ready: profileReady, refresh } = useProfile();
 
   useEffect(() => {
     if (!authReady) return;
-    if (!user) navigate('/login', { replace: true });
-  }, [authReady, user, navigate]);
+    if (!userId) navigate('/login', { replace: true });
+  }, [authReady, userId, navigate]);
 
   useEffect(() => {
     if (profileReady && profile && isRegistrationComplete(profile)) {
-      sessionStorage.removeItem('civx_pending_registration');
+      clearPendingRegistration();
       navigate(redirectPathForRole(profile.role), { replace: true });
     }
   }, [profile, profileReady, navigate]);
 
   useEffect(() => {
-    const pending = sessionStorage.getItem('civx_pending_registration');
+    const pending = loadPendingRegistration();
     if (!pending) return;
-    try {
-      const data = JSON.parse(pending);
-      setAccountType(data.account_type ?? null);
-      setFullName(data.full_name ?? '');
-      setPhone(data.phone_number ?? '');
-      setBarangay(data.barangay ?? '');
-      setOrganizationName(data.organization_name ?? '');
-      setOrganizationLogoUrl(data.organization_logo_url ?? '');
-      setProfilePhotoUrl(data.profile_photo_url ?? '');
-      setInviteToken(data.invite_token ?? inviteFromUrl);
-      setPublicWorkerType(data.public_worker_type ?? '');
-      if (data.account_type === 'street_sweeper') setWorkerFlowOpen(true);
-    } catch {
-      /* ignore */
-    }
+    setAccountType(pending.account_type ?? null);
+    setFullName(pending.full_name ?? '');
+    setPhone(pending.phone_number ?? '');
+    setBarangay(pending.barangay ?? '');
+    setOrganizationName(pending.organization_name ?? '');
+    setOrganizationLogoUrl(
+      pending.organization_logo_url ?? pending.organization_logo_data_url ?? '',
+    );
+    setProfilePhotoUrl(pending.profile_photo_url ?? pending.profile_photo_data_url ?? '');
+    setInviteToken(pending.invite_token ?? inviteFromUrl);
+    setPublicWorkerType((pending.public_worker_type as PublicWorkerType) ?? '');
+    if (pending.account_type === 'street_sweeper') setWorkerFlowOpen(true);
   }, [inviteFromUrl]);
 
   useEffect(() => {
@@ -78,50 +90,31 @@ export default function CompleteRegistrationPage() {
       .catch(() => setInviteInfo({ valid: false, status: 'invalid' }));
   }, [inviteToken]);
 
-  async function submitRegistration(payload: {
-    account_type: AccountType;
-    full_name: string;
-    phone_number: string;
-    barangay: string;
-    organization_name?: string;
-    organization_logo_url?: string;
-    profile_photo_url?: string;
-    invite_token?: string;
-    public_worker_type?: string;
-  }) {
+  async function submitRegistration(payload: Parameters<typeof completeRegistration>[0]) {
     const result = await completeRegistration(payload);
-    sessionStorage.removeItem('civx_pending_registration');
+    clearPendingRegistration();
     await refresh();
-    navigate(redirectPathForRole(result.role));
+    navigate(redirectPathForRole(result.role), { replace: true });
   }
 
   useEffect(() => {
-    if (autoSubmitted.current || !authReady || !user || !profileReady || !profile) return;
-    if (isRegistrationComplete(profile)) return;
-    const pendingRaw = sessionStorage.getItem('civx_pending_registration');
-    if (!pendingRaw) return;
-    try {
-      const data = JSON.parse(pendingRaw);
-      if (!data.account_type || !data.full_name?.trim() || !data.phone_number?.trim() || !data.barangay?.trim()) return;
-      if (data.account_type === 'street_sweeper' && !data.public_worker_type) return;
-      if (data.account_type === 'organizer' && !data.organization_logo_url) return;
-      autoSubmitted.current = true;
-      setLoading(true);
-      void submitRegistration(data).catch((err) => {
-        autoSubmitted.current = false;
-        const msg = err instanceof Error ? err.message : 'Registration failed';
-        if (msg.includes('Registration already completed') || msg.includes('already completed')) {
-          sessionStorage.removeItem('civx_pending_registration');
-          navigate(redirectPathForRole(profile.role), { replace: true });
-          return;
-        }
-        setError(msg);
-        setLoading(false);
-      });
-    } catch {
+    if (autoSubmitted.current || !authReady || !userId) return;
+    if (profileReady && profile && isRegistrationComplete(profile)) return;
+    const pending = loadPendingRegistration();
+    if (!pending || !isPendingRegistrationComplete(pending)) return;
+    autoSubmitted.current = true;
+    setLoading(true);
+    void tryCompletePendingRegistration(pending).then((result) => {
+      if (result.completed && result.role) {
+        const role = result.role;
+        void refresh().then(() => navigate(redirectPathForRole(role), { replace: true }));
+        return;
+      }
       autoSubmitted.current = false;
-    }
-  }, [authReady, user, profileReady, profile, navigate, refresh]);
+      if (result.error) setError(result.error);
+      setLoading(false);
+    });
+  }, [authReady, userId, profileReady, profile, navigate, refresh]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -140,19 +133,23 @@ export default function CompleteRegistrationPage() {
     setLoading(true);
     setError('');
     try {
-      await submitRegistration({
+      if (!accountType) return;
+      const pending = mergePendingRegistration(loadPendingRegistration(), {
         account_type: accountType,
         full_name: fullName,
         phone_number: phone,
         barangay,
-        organization_name: accountType === 'organizer' ? organizationName : undefined,
-        organization_logo_url: accountType === 'organizer' ? organizationLogoUrl : undefined,
+        organization_name: organizationName || undefined,
+        organization_logo_url: organizationLogoUrl || undefined,
         profile_photo_url: profilePhotoUrl || undefined,
-        invite_token: accountType === 'street_sweeper' ? inviteToken : undefined,
-        public_worker_type: accountType === 'street_sweeper' ? publicWorkerType || undefined : undefined,
+        invite_token: inviteToken || undefined,
+        public_worker_type: publicWorkerType || undefined,
       });
+      savePendingRegistration(pending);
+      const payload = await finishPendingRegistration(pending);
+      await submitRegistration(payload);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Registration failed';
+      const msg = registrationErrorMessage(err);
       if (msg.includes('already completed')) {
         navigate(redirectPathForRole(profile?.role || 'citizen'), { replace: true });
         return;
@@ -162,7 +159,7 @@ export default function CompleteRegistrationPage() {
     }
   }
 
-  if (!authReady || !user) return null;
+  if (!authReady || !userId) return null;
 
   if (profileReady && profile && isRegistrationComplete(profile)) {
     return null;

@@ -22,7 +22,7 @@ export interface MapMarkerLike {
   id: string;
   latitude: number;
   longitude: number;
-  type: 'incident' | 'cleanup';
+  type: 'incident' | 'cleanup' | 'ecoquest';
   primary_issue_type?: string;
   severity_score?: number;
   report_count?: number;

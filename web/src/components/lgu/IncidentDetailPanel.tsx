@@ -396,7 +396,7 @@ export function IncidentDetailPanel({ incident, departments, onAction, onClose }
         </ButtonSecondaryPill>
         {incident.latitude != null && incident.longitude != null && (
           <Link
-            to={`/lgu/map?lat=${incident.latitude}&lng=${incident.longitude}`}
+            to={`/map?lat=${incident.latitude}&lng=${incident.longitude}`}
             className="btn-secondary-pill text-sm"
           >
             View on map

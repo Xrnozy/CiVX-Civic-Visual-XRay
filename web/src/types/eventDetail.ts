@@ -14,6 +14,7 @@ export interface PublicEventDetail {
   organizer_logo_url?: string | null;
   organizer_profile_photo_url?: string | null;
   banner_url?: string | null;
+  rejection_reason?: string | null;
   checkout_qr_code_token?: string | null;
 }
 

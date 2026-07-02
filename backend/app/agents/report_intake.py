@@ -9,7 +9,8 @@ from app.agents.incident_intelligence import IncidentIntelligenceAgent
 from app.agents.lgu_triage import LGUTriageAgent
 from app.config import settings
 from app.db import get_supabase
-from app.utils.geocoding import resolve_barangay
+from app.utils.geocoding import resolve_address_fields
+from app.utils.supabase_schema import insert_row
 
 
 class ReportIntakeAgent:
@@ -27,6 +28,9 @@ class ReportIntakeAgent:
         description: str | None = None,
         issue_type: str | None = None,
         barangay: str | None = None,
+        street: str | None = None,
+        city: str | None = None,
+        province: str | None = None,
         photo_url: str | None = None,
         photo_urls: list[str] | None = None,
     ) -> dict[str, Any]:
@@ -73,21 +77,27 @@ class ReportIntakeAgent:
         severity = detection.severity_score if detection else 1.5
         bbox = detection.bounding_box if detection else None
 
-        resolved_barangay = resolve_barangay(
+        resolved = resolve_address_fields(
             barangay=barangay,
+            street=street,
+            city=city,
+            province=province,
             latitude=latitude,
             longitude=longitude,
         )
-        address_text = None if resolved_barangay == "Unknown" else resolved_barangay
+        address_text = resolved.barangay
 
         sb = get_supabase()
-        report_row = sb.table("reports").insert({
+        report_row = insert_row(sb, "reports", {
             "reporter_user_id": user_id,
             "issue_type": final_issue,
             "description": description,
             "latitude": latitude,
             "longitude": longitude,
             "address_text": address_text,
+            "street": resolved.street,
+            "city": resolved.city,
+            "province": resolved.province,
             "photo_url": photo_url or "",
             "photo_urls": uploaded_photo_urls,
             "ai_suggested_type": detection.issue_type if detection else final_issue,
@@ -95,7 +105,7 @@ class ReportIntakeAgent:
             "ai_bounding_box": bbox,
             "ai_severity_score": severity,
             "status": "pending",
-        }).execute().data[0]
+        })
 
         rec = self.intel.recommend(latitude, longitude, final_issue, ai_conf)
         if rec.action == "merge" and rec.incident_id:
@@ -110,6 +120,9 @@ class ReportIntakeAgent:
                 severity,
                 "citizen",
                 barangay=address_text,
+                street=resolved.street,
+                city=resolved.city,
+                province=resolved.province,
             )
             incident_id = inc["id"]
             sb.table("reports").update({"merged_incident_id": incident_id}).eq("id", report_row["id"]).execute()

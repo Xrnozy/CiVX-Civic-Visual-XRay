@@ -5,23 +5,37 @@ const API_URL = import.meta.env.VITE_API_URL || '';
 
 let cachedToken: string | null = null;
 let cachedTokenExpiry = 0;
+let cachedUid: string | null = null;
 
 export async function resolveAuthToken(forceRefresh = false): Promise<string | null> {
-  if (!forceRefresh && cachedToken && Date.now() < cachedTokenExpiry) {
-    return cachedToken;
-  }
-
   if (isFirebaseConfigured) {
     const auth = getFirebaseAuth();
     await auth.authStateReady();
     const user = auth.currentUser;
-    if (user) {
-      const token = await user.getIdToken(forceRefresh);
-      cachedToken = token;
-      cachedTokenExpiry = Date.now() + 50_000;
-      localStorage.setItem('civx_token', token);
-      return token;
+
+    if (!user) {
+      cachedUid = null;
+      clearAuthTokenCache();
+      localStorage.removeItem('civx_token');
+      return null;
     }
+
+    if (cachedUid !== user.uid) {
+      clearAuthTokenCache();
+      cachedUid = user.uid;
+      forceRefresh = true;
+    }
+
+    if (!forceRefresh && cachedToken && Date.now() < cachedTokenExpiry) {
+      return cachedToken;
+    }
+
+    const token = await user.getIdToken(forceRefresh);
+    cachedToken = token;
+    cachedUid = user.uid;
+    cachedTokenExpiry = Date.now() + 50_000;
+    localStorage.setItem('civx_token', token);
+    return token;
   }
 
   cachedToken = localStorage.getItem('civx_token');
@@ -34,6 +48,7 @@ export async function resolveAuthToken(forceRefresh = false): Promise<string | n
 export function clearAuthTokenCache(): void {
   cachedToken = null;
   cachedTokenExpiry = 0;
+  cachedUid = null;
 }
 
 async function fetchWithAuth<T>(path: string, options: RequestInit, token: string | null): Promise<Response> {

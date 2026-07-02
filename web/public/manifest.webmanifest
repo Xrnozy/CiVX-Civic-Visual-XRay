@@ -1,0 +1,19 @@
+{
+  "name": "CiVX Mobile",
+  "short_name": "CiVX",
+  "description": "CiVX civic reporting mobile demo",
+  "start_url": "/mobile",
+  "scope": "/mobile",
+  "display": "standalone",
+  "display_override": ["fullscreen", "standalone"],
+  "background_color": "#f5f5f7",
+  "theme_color": "#ffffff",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}

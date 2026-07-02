@@ -46,7 +46,11 @@ export function ProfileImageUpload({
       const url = await uploadProfileImage(file);
       onChange(url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Upload failed');
+      const msg = err instanceof Error ? err.message : 'Upload failed';
+      setError(msg.toLowerCase().includes('failed to fetch') ? 'Cannot reach server. Is the API running on port 8000?' : msg);
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'ProfileImageUpload.tsx:upload',message:'upload failed',data:{error:msg.slice(0,200)},timestamp:Date.now(),hypothesisId:'H1-H3',runId:'register-debug'})}).catch(()=>{});
+      // #endregion
     } finally {
       setBusy(false);
       if (inputRef.current) inputRef.current.value = '';

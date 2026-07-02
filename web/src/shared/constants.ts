@@ -35,6 +35,23 @@ export const INCIDENT_STATUSES = [
 export const DEFAULT_MAP_CENTER = { lat: 14.5995, lng: 120.9842 };
 export const DEFAULT_MAP_ZOOM = 11;
 export const DEFAULT_MAP_PIN_ZOOM = 13;
+/** Never zoom past this when expanding marker clusters — avoids losing context. */
+export const MAP_CLUSTER_MAX_ZOOM = 15;
+
+/** Hide Google default POI/transit icons so only CiVX markers remain. */
+export const CIVIC_MAP_STYLES = [
+  { featureType: 'poi', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.business', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.medical', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.school', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.sports_complex', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.government', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.place_of_worship', stylers: [{ visibility: 'off' }] },
+  { featureType: 'poi.park', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit.station', stylers: [{ visibility: 'off' }] },
+  { featureType: 'transit.line', stylers: [{ visibility: 'off' }] },
+] as const;
 
 /** Real-world radius (meters) to collapse nearby map pins into one marker */
 export const MAP_MARKER_MERGE_RADIUS_M = 1;

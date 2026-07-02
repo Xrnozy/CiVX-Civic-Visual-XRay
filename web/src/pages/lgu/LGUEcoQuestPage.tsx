@@ -6,9 +6,16 @@ import {
   type PartySlot,
 } from '../../components/ecoquest/PartySlotSection';
 import {
+  RequiredProofSection,
+  ProofBadges,
+} from '../../components/ecoquest/RequiredProofSection';
+import { EcoQuestTaskQrPanel } from '../../components/ecoquest/EcoQuestTaskQrPanel';
+import {
   LocationPickerSection,
+  hasDetectedBarangay,
   hasValidLocation,
 } from '../../components/map/LocationPickerSection';
+import { fetchAddressFromCoordinates } from '../../lib/geocoding';
 import { api } from '../../lib/api';
 import { ECOQUEST_TASK_TYPES, formatDefaultMapCoordinates, type EcoQuestTaskType } from '../../shared/constants';
 
@@ -64,6 +71,9 @@ const EMPTY_FORM = {
   description: '',
   task_type: ECOQUEST_TASK_TYPES[0] as EcoQuestTaskType,
   barangay: '',
+  street: '',
+  city: '',
+  province: '',
   latitude: DEFAULT_COORDS.latitude,
   longitude: DEFAULT_COORDS.longitude,
   reward_type: '',
@@ -99,26 +109,6 @@ function formatLabel(value: string) {
   return TASK_TYPE_LABELS[value] || value.replace(/_/g, ' ');
 }
 
-function ProofBadges({ proof }: { proof?: RequiredProof }) {
-  const items = [
-    { key: 'gps', label: 'GPS' },
-    { key: 'before_photo', label: 'Before photo' },
-    { key: 'after_photo', label: 'After photo' },
-    { key: 'qr', label: 'QR' },
-  ] as const;
-  return (
-    <div className="mt-2 flex flex-wrap gap-1.5">
-      {items.map(({ key, label }) =>
-        proof?.[key] ? (
-          <span key={key} className="rounded-full bg-canvas-parchment px-2 py-0.5 text-xs text-ink-muted-48">
-            {label}
-          </span>
-        ) : null,
-      )}
-    </div>
-  );
-}
-
 export default function LGUEcoQuestPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
@@ -127,6 +117,7 @@ export default function LGUEcoQuestPage() {
   const [creating, setCreating] = useState(false);
   const [formError, setFormError] = useState('');
   const [form, setForm] = useState(EMPTY_FORM);
+  const [qrTask, setQrTask] = useState<Task | null>(null);
 
   const loadTasks = useCallback(() => {
     api<Task[]>('/api/ecoquest/tasks').then(setTasks).catch(() => setTasks([]));
@@ -149,36 +140,67 @@ export default function LGUEcoQuestPage() {
 
   async function createTask(e: FormEvent) {
     e.preventDefault();
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'LGUEcoQuestPage.tsx:createTask:entry',message:'createTask invoked',data:{titleLen:form.title.length,hasValidLoc:hasValidLocation(form.latitude,form.longitude),hasBarangay:hasDetectedBarangay(form),barangay:form.barangay?.slice(0,40),lat:form.latitude,lng:form.longitude,creating},timestamp:Date.now(),hypothesisId:'H1-H4',runId:'publish-debug'})}).catch(()=>{});
+    // #endregion
     if (!hasValidLocation(form.latitude, form.longitude)) {
       setFormError('Pin the task location on the map before publishing.');
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'LGUEcoQuestPage.tsx:createTask:guard-location',message:'blocked invalid location',data:{lat:form.latitude,lng:form.longitude},timestamp:Date.now(),hypothesisId:'H1',runId:'publish-debug'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
+    if (!hasDetectedBarangay(form)) {
+      setFormError('Wait for barangay detection to finish before publishing.');
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'LGUEcoQuestPage.tsx:createTask:guard-barangay',message:'blocked missing barangay',data:{barangay:form.barangay,street:form.street?.slice(0,30)},timestamp:Date.now(),hypothesisId:'H1-H3',runId:'publish-debug'})}).catch(()=>{});
+      // #endregion
       return;
     }
     setFormError('');
     setCreating(true);
     try {
+      let barangay = form.barangay.trim();
+      if (!barangay) {
+        const address = await fetchAddressFromCoordinates(Number(form.latitude), Number(form.longitude));
+        barangay = address.barangay.trim();
+      }
+      const payload = {
+        title: form.title,
+        description: form.description || null,
+        task_type: form.task_type,
+        barangay: barangay || null,
+        latitude: Number(form.latitude),
+        longitude: Number(form.longitude),
+        reward_type: form.reward_type || null,
+        collaborators: form.collaboratorSlots.map(partySlotToEntry).filter(Boolean),
+        sponsors: form.sponsorSlots.map(partySlotToEntry).filter(Boolean),
+        required_proof: {
+          gps: form.requireGps,
+          before_photo: form.requireBefore,
+          after_photo: form.requireAfter,
+          qr: form.requireQr,
+        },
+      };
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'LGUEcoQuestPage.tsx:createTask:pre-api',message:'calling POST /api/ecoquest/tasks',data:{title:payload.title,barangay:payload.barangay,collabCount:payload.collaborators.length,sponsorCount:payload.sponsors.length},timestamp:Date.now(),hypothesisId:'H2-H5',runId:'publish-debug'})}).catch(()=>{});
+      // #endregion
       await api('/api/ecoquest/tasks', {
         method: 'POST',
-        body: JSON.stringify({
-          title: form.title,
-          description: form.description || null,
-          task_type: form.task_type,
-          barangay: form.barangay || null,
-          latitude: Number(form.latitude),
-          longitude: Number(form.longitude),
-          reward_type: form.reward_type || null,
-          collaborators: form.collaboratorSlots.map(partySlotToEntry).filter(Boolean),
-          sponsors: form.sponsorSlots.map(partySlotToEntry).filter(Boolean),
-          required_proof: {
-            gps: form.requireGps,
-            before_photo: form.requireBefore,
-            after_photo: form.requireAfter,
-            qr: form.requireQr,
-          },
-        }),
+        body: JSON.stringify(payload),
       });
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'LGUEcoQuestPage.tsx:createTask:success',message:'task created',data:{title:payload.title},timestamp:Date.now(),hypothesisId:'H2',runId:'publish-debug'})}).catch(()=>{});
+      // #endregion
       setForm(EMPTY_FORM);
       setShowForm(false);
       load();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFormError(msg.slice(0, 300) || 'Could not publish task.');
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ed5453'},body:JSON.stringify({sessionId:'ed5453',location:'LGUEcoQuestPage.tsx:createTask:error',message:'API create failed',data:{error:msg.slice(0,500)},timestamp:Date.now(),hypothesisId:'H2-H5',runId:'publish-debug'})}).catch(()=>{});
+      // #endregion
     } finally {
       setCreating(false);
     }
@@ -272,15 +294,7 @@ export default function LGUEcoQuestPage() {
                     placeholder="Instructions for volunteers"
                   />
                 </label>
-                <label className="block text-sm">
-                  Barangay
-                  <input
-                    value={form.barangay}
-                    onChange={(e) => setForm({ ...form, barangay: e.target.value })}
-                    className="mt-1 w-full rounded-lg border border-hairline px-3 py-2"
-                  />
-                </label>
-                <label className="block text-sm">
+                <label className="block text-sm md:col-span-2">
                   Reward type (optional)
                   <input
                     value={form.reward_type}
@@ -307,26 +321,15 @@ export default function LGUEcoQuestPage() {
                 onChange={(sponsorSlots) => setForm({ ...form, sponsorSlots })}
               />
 
-              <fieldset>
-                <legend className="text-sm font-medium">Required proof</legend>
-                <div className="mt-2 flex flex-wrap gap-4 text-sm">
-                  {([
-                    ['requireGps', 'GPS check-in'],
-                    ['requireBefore', 'Before photo'],
-                    ['requireAfter', 'After photo'],
-                    ['requireQr', 'QR validation'],
-                  ] as const).map(([key, label]) => (
-                    <label key={key} className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={form[key]}
-                        onChange={(e) => setForm({ ...form, [key]: e.target.checked })}
-                      />
-                      {label}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
+              <RequiredProofSection
+                values={{
+                  requireGps: form.requireGps,
+                  requireBefore: form.requireBefore,
+                  requireAfter: form.requireAfter,
+                  requireQr: form.requireQr,
+                }}
+                onChange={(proof) => setForm({ ...form, ...proof })}
+              />
             </div>
 
             <div className="rounded-[20px] border border-hairline bg-canvas-parchment p-5">
@@ -334,7 +337,23 @@ export default function LGUEcoQuestPage() {
                 embedded
                 latitude={form.latitude}
                 longitude={form.longitude}
-                onChange={(lat, lng) => setForm({ ...form, latitude: lat, longitude: lng })}
+                address={{
+                  barangay: form.barangay,
+                  street: form.street,
+                  city: form.city,
+                  province: form.province,
+                }}
+                autoDetectAddress
+                onAddressChange={(addr) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    barangay: addr.barangay,
+                    street: addr.street,
+                    city: addr.city,
+                    province: addr.province,
+                  }))
+                }
+                onChange={(lat, lng) => setForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
                 label="Task location"
                 hint="Pin where volunteers should perform the task and check in."
               />
@@ -348,6 +367,15 @@ export default function LGUEcoQuestPage() {
           </ButtonPrimary>
         </form>
       )}
+
+      {qrTask ? (
+        <EcoQuestTaskQrPanel
+          taskId={qrTask.id}
+          taskTitle={qrTask.title}
+          open={Boolean(qrTask)}
+          onClose={() => setQrTask(null)}
+        />
+      ) : null}
 
       {tab === 'tasks' && (
         <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -375,11 +403,11 @@ export default function LGUEcoQuestPage() {
                 </p>
               )}
               <ProofBadges proof={t.required_proof} />
-              {t.qr_code_token && (
-                <p className="mt-3 rounded-lg bg-canvas-parchment px-3 py-2 font-mono text-xs text-ink-muted-48">
-                  QR: {t.qr_code_token.slice(0, 8)}…
-                </p>
-              )}
+              {t.required_proof?.qr && t.qr_code_token && t.status !== 'closed' ? (
+                <div className="mt-3">
+                  <ButtonSecondaryPill onClick={() => setQrTask(t)}>Show Task QR</ButtonSecondaryPill>
+                </div>
+              ) : null}
               {t.status !== 'closed' && (
                 <div className="mt-4">
                   <ButtonSecondaryPill onClick={() => closeTask(t.id)}>Close Task</ButtonSecondaryPill>

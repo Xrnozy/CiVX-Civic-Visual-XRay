@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { CivicMap } from '../../components/map/CivicMap';
 import { ISSUE_CATEGORIES } from '../../shared/constants';
 
 interface Marker {
@@ -59,8 +60,8 @@ export default function MobileMap() {
     return [...incidents, ...events];
   }, [layer, incidents, events]);
 
-  const visibleMarkers = markers.slice(0, 8);
-  const selectedMarker = selected && visibleMarkers.some((m) => m.id === selected.id) ? selected : visibleMarkers[0] || null;
+  const nearbyMarkers = markers.slice(0, 8);
+  const selectedMarker = selected && markers.some((m) => m.id === selected.id) ? selected : nearbyMarkers[0] || null;
 
   return (
     <div className="mobile-map-experience">
@@ -91,33 +92,15 @@ export default function MobileMap() {
         )}
       </div>
 
-      <section className="mobile-map-canvas" aria-label="Interactive demo community map">
-        <div className="mobile-map-land" />
-        <div className="mobile-map-road mobile-map-road-a" />
-        <div className="mobile-map-road mobile-map-road-b" />
-        <div className="mobile-map-road mobile-map-road-c" />
-        <div className="mobile-map-water" />
-
-        {visibleMarkers.map((marker, index) => {
-          const isSelected = selectedMarker?.id === marker.id;
-          return (
-            <button
-              key={marker.id}
-              type="button"
-              aria-label={titleFor(marker)}
-              className={`mobile-map-pin ${marker.type === 'cleanup' ? 'cleanup' : ''} ${isSelected ? 'selected' : ''}`}
-              style={{ left: `${16 + ((index * 19) % 68)}%`, top: `${28 + ((index * 23) % 44)}%` }}
-              onClick={() => setSelected(marker)}
-            />
-          );
-        })}
-
-        {visibleMarkers.length === 0 ? (
-          <div className="mobile-native-map-empty">
-            <strong>Community map</strong>
-            <span>Live map data appears here when reports or events are available.</span>
-          </div>
-        ) : null}
+      <section className="mobile-map-canvas" aria-label="Interactive community map">
+        <CivicMap
+          markers={markers}
+          heightClass="h-full"
+          hideMapChrome
+          flush
+          onMarkerSelect={(marker) => setSelected(marker as Marker)}
+          onMapBackgroundClick={() => setSelected(null)}
+        />
       </section>
 
       <section className="mobile-map-preview-sheet">
@@ -130,7 +113,7 @@ export default function MobileMap() {
             </article>
             <div className="mobile-map-nearby-list">
               <h3>Nearby activity</h3>
-              {visibleMarkers.map((marker) => (
+              {nearbyMarkers.map((marker) => (
                 <button key={marker.id} type="button" className={selectedMarker.id === marker.id ? 'active' : ''} onClick={() => setSelected(marker)}>
                   <strong>{titleFor(marker)}</strong>
                   <span>{marker.type === 'cleanup' ? 'Cleanup event' : 'Issue report'}</span>

@@ -125,10 +125,29 @@ def qr_valid(record: dict[str, Any], event: dict[str, Any]) -> bool | None:
     return qr == event.get("qr_code_token")
 
 
+TRACKER_STATUSES = ("registered", "checked-in", "completed", "rejected")
+
+
+def tracker_status(record: dict[str, Any]) -> str:
+    if record.get("organizer_status") == "rejected" or record.get("lgu_status") == "rejected":
+        return "rejected"
+    if record.get("organizer_status") == "verified":
+        return "completed"
+    if record.get("check_out_time"):
+        return "completed"
+    if record.get("check_in_time"):
+        return "checked-in"
+    return "registered"
+
+
 def verified_hours(record: dict[str, Any]) -> float:
-    if record.get("lgu_status") != "verified":
+    if record.get("organizer_status") != "verified":
         return 0.0
     return float(record.get("calculated_hours") or 0)
+
+
+def can_send_certificate(user: AuthUser, event: dict[str, Any]) -> bool:
+    return user.role == "organizer" and event.get("organizer_user_id") == user.id
 
 
 def build_volunteer_row(
@@ -136,6 +155,7 @@ def build_volunteer_row(
     registration: dict[str, Any] | None,
     event: dict[str, Any],
     user: AuthUser,
+    user_emails: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     show_pii = can_view_pii(user, event)
     reg = registration or {}
@@ -146,6 +166,7 @@ def build_volunteer_row(
         "barangay": reg.get("barangay"),
         "organizer_status": status_to_api(record.get("organizer_status")),
         "lgu_status": status_to_api(record.get("lgu_status")),
+        "tracker_status": tracker_status(record),
         "check_in_time": record.get("check_in_time"),
         "check_out_time": record.get("check_out_time"),
         "check_in_latitude": record.get("check_in_latitude"),
@@ -156,32 +177,38 @@ def build_volunteer_row(
         "calculated_hours": float(record.get("calculated_hours") or 0),
         "verified_hours": verified_hours(record),
         "registered_at": reg.get("created_at"),
+        "certificate_sent_at": record.get("certificate_sent_at"),
+        "certificate_sent_to": record.get("certificate_sent_to"),
     }
     if show_pii:
         row["phone_number"] = reg.get("phone_number")
         row["emergency_contact"] = reg.get("emergency_contact")
+        if user_emails is not None:
+            row["email"] = user_emails.get(record["user_id"])
     return row
 
 
 def event_permissions(user: AuthUser, event: dict[str, Any]) -> dict[str, bool]:
     return {
         "can_view_pii": can_view_pii(user, event),
-        "can_organizer_verify": can_organizer_act(user, event),
-        "can_lgu_verify": can_lgu_act(user),
+        "can_organizer_verify": False,
+        "can_lgu_verify": False,
+        "can_send_certificate": can_send_certificate(user, event),
     }
 
 
 def summarize_records(records: list[dict[str, Any]]) -> dict[str, Any]:
-    counts = {s: 0 for s in STATUS_API_TO_DB}
+    counts = {s: 0 for s in TRACKER_STATUSES}
     total_verified_hours = 0.0
     total = len(records)
     for rec in records:
-        status = status_to_api(rec.get("lgu_status"))
+        status = tracker_status(rec)
         counts[status] = counts.get(status, 0) + 1
         total_verified_hours += verified_hours(rec)
-    checked = counts.get("checked-in", 0) + counts.get("checked-out", 0) + counts.get("verified", 0)
+    checked = counts.get("checked-in", 0) + counts.get("completed", 0)
     return {
         "total_volunteers": total,
+        "by_tracker_status": counts,
         "by_status": counts,
         "checked_in_percent": round((checked / total) * 100, 1) if total else 0,
         "total_verified_hours": round(total_verified_hours, 2),
@@ -203,6 +230,8 @@ PHOTO_UPLOAD_STATUSES = frozenset({"checked-in", "checked-out", "verified"})
 
 
 def attendee_status_for_record(record: dict[str, Any]) -> str:
+    if record.get("organizer_status") == "verified":
+        return "verified"
     return status_to_api(record.get("lgu_status") or record.get("organizer_status"))
 
 
@@ -383,8 +412,9 @@ def roster_for_event(event_id: str, user: AuthUser) -> dict[str, Any]:
     require_event_access(user, event)
     records = fetch_event_records(event_id)
     registrations = fetch_registrations(event_id)
+    user_emails = fetch_user_emails([rec["user_id"] for rec in records]) if can_view_pii(user, event) else {}
     volunteers = [
-        build_volunteer_row(rec, registrations.get(rec["user_id"]), event, user)
+        build_volunteer_row(rec, registrations.get(rec["user_id"]), event, user, user_emails)
         for rec in records
     ]
     volunteers.sort(key=lambda v: v.get("full_name", ""))
@@ -397,6 +427,7 @@ def roster_for_event(event_id: str, user: AuthUser) -> dict[str, Any]:
             "scheduled_end": event.get("scheduled_end"),
             "approval_status": event.get("approval_status"),
             "organizer_user_id": event.get("organizer_user_id"),
+            "auto_send_certificates": event.get("auto_send_certificates", True),
         },
         "permissions": event_permissions(user, event),
         "summary": summarize_records(records),
@@ -428,9 +459,9 @@ def cumulative_hours(user_id: str) -> dict[str, Any]:
     sb = get_supabase()
     records = (
         sb.table("attendance_records")
-        .select("event_id,calculated_hours,lgu_status")
+        .select("event_id,calculated_hours,organizer_status")
         .eq("user_id", user_id)
-        .eq("lgu_status", "verified")
+        .eq("organizer_status", "verified")
         .execute()
         .data
         or []
@@ -449,7 +480,12 @@ def build_certificate(
     verifier: AuthUser,
 ) -> dict[str, Any]:
     event = get_event(event_id)
-    require_event_access(verifier, event)
+    if verifier.role == "lgu_staff":
+        raise HTTPException(403, "LGU staff may not access certificates")
+    if verifier.role == "organizer" and event.get("organizer_user_id") != verifier.id:
+        raise HTTPException(403, "Not authorized for this event")
+    if verifier.role not in ("organizer", "lgu_admin"):
+        raise HTTPException(403, "Insufficient permissions")
     sb = get_supabase()
     rec = (
         sb.table("attendance_records")
@@ -462,8 +498,8 @@ def build_certificate(
     if not rec.data:
         raise HTTPException(404, "Attendance record not found")
     record = rec.data[0]
-    if record.get("lgu_status") != "verified":
-        raise HTTPException(400, "Certificate available only for LGU-verified attendance")
+    if record.get("organizer_status") != "verified":
+        raise HTTPException(400, "Certificate available only after tracker checkout is complete")
 
     reg_rows = (
         sb.table("volunteer_registrations")
@@ -491,7 +527,7 @@ def build_certificate(
         "check_in_time": record.get("check_in_time"),
         "check_out_time": record.get("check_out_time"),
         "verified_by": verifier.full_name,
-        "verified_status": status_to_api(record.get("lgu_status")),
+        "verified_status": status_to_api(record.get("organizer_status")),
     }
     html = f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><title>Service Hour Certificate</title>
