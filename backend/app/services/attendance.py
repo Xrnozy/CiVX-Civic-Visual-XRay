@@ -264,6 +264,24 @@ def fetch_organizer_profile_photo(organizer_user_id: str | None) -> str | None:
     return rows[0].get("profile_photo_url")
 
 
+def fetch_organizer_logo(organizer_user_id: str | None) -> str | None:
+    if not organizer_user_id:
+        return None
+    sb = get_supabase()
+    rows = (
+        sb.table("users")
+        .select("organization_logo_url")
+        .eq("id", organizer_user_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not rows:
+        return None
+    return rows[0].get("organization_logo_url")
+
+
 def volunteer_event_status(event_id: str, user_id: str) -> dict[str, Any]:
     sb = get_supabase()
     rows = (

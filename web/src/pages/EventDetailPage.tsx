@@ -259,6 +259,7 @@ export default function EventDetailPage() {
           <EventDetailHeader
             title={event.title}
             organizerName={event.organizer_name || 'Community organizer'}
+            organizerLogoUrl={event.organizer_logo_url}
             organizerPhotoUrl={event.organizer_profile_photo_url}
             bannerUrl={event.banner_url}
           />

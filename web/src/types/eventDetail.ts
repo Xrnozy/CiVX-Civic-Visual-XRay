@@ -10,6 +10,7 @@ export interface PublicEventDetail {
   longitude?: number;
   going_count?: number;
   organizer_name?: string;
+  organizer_logo_url?: string | null;
   organizer_profile_photo_url?: string | null;
   banner_url?: string | null;
 }

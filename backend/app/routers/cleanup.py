@@ -62,6 +62,7 @@ def get_event(event_id: str):
         **event,
         "going_count": att.public_going_count(event_id),
         "organizer_name": att.fetch_organizer_display_name(organizer_id),
+        "organizer_logo_url": att.fetch_organizer_logo(organizer_id),
         "organizer_profile_photo_url": att.fetch_organizer_profile_photo(organizer_id),
     }
 

@@ -221,22 +221,31 @@ export function CivicMap({
     return `${month} ${date.getDate()}`;
   }
 
-  /** Pan/zoom toward the selected marker without overshooting. */
-  function focusMapOnMarker(markerData: MarkerData) {
-    if (!map) return;
+  /** Ensure readable zoom when a marker is selected (no pan — fit handles positioning). */
+  function ensureMarkerZoom(): boolean {
+    if (!map) return false;
     const zoom = map.getZoom();
-    if (typeof zoom === 'number' && zoom < DEFAULT_MAP_PIN_ZOOM) {
+    const needsZoom = typeof zoom === 'number' && zoom < DEFAULT_MAP_PIN_ZOOM;
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'post-fix',location:'CivicMap.tsx:ensureMarkerZoom',message:'ensureMarkerZoom called',data:{currentZoom:zoom,needsZoom},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+    // #endregion
+    if (needsZoom) {
       map.setZoom(DEFAULT_MAP_PIN_ZOOM);
     }
-    map.panTo({ lat: markerData.latitude, lng: markerData.longitude });
+    return needsZoom;
   }
 
   /** Center the marker + preview card together inside the map viewport. */
-  function fitPreviewStackInView(gmaps: any, markerData: MarkerData, cardId: string) {
+  function fitPreviewStackInView(gmaps: any, markerData: MarkerData, cardId: string, pass: 'single') {
     if (!map) return;
     const mapEl = map.getDiv() as HTMLElement | undefined;
     const card = document.getElementById(cardId);
-    if (!mapEl || !card) return;
+    if (!mapEl || !card) {
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'post-fix',location:'CivicMap.tsx:fitPreviewStackInView',message:'fit skipped - missing elements',data:{pass,cardId,hasMapEl:!!mapEl,hasCard:!!card},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+      // #endregion
+      return;
+    }
 
     const latLng = new gmaps.LatLng(markerData.latitude, markerData.longitude);
     const overlay = new gmaps.OverlayView();
@@ -269,21 +278,26 @@ export function CivicMap({
 
       const panX = stackCenterX - targetCenterX;
       const panY = stackCenterY - targetCenterY;
+      const willPan = Math.abs(panX) > 4 || Math.abs(panY) > 4;
+
+      // #region agent log
+      fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'post-fix',location:'CivicMap.tsx:fitPreviewStackInView',message:'fit calculation',data:{pass,markerId:markerData.id,mapW:mapRect.width,mapH:mapRect.height,cardL:relX(cardRect.left),cardR:relX(cardRect.right),markerPxX:markerPx.x,markerPxY:markerPx.y,stackCenterX,stackCenterY,targetCenterX,targetCenterY,panX,panY,willPan},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
 
       overlay.setMap(null);
 
-      if (Math.abs(panX) > 2 || Math.abs(panY) > 2) {
+      if (willPan) {
         map.panBy(panX, panY);
       }
     };
     overlay.setMap(map);
   }
 
+  /** One fit pass after InfoWindow layout is stable — avoids stacked pan animations. */
   function runAfterPreviewLayout(gmaps: any, markerData: MarkerData, cardId: string) {
     window.requestAnimationFrame(() => {
-      fitPreviewStackInView(gmaps, markerData, cardId);
-      gmaps.event.addListenerOnce(map, 'idle', () => {
-        fitPreviewStackInView(gmaps, markerData, cardId);
+      window.requestAnimationFrame(() => {
+        fitPreviewStackInView(gmaps, markerData, cardId, 'single');
       });
     });
   }
@@ -296,8 +310,13 @@ export function CivicMap({
       ? `Approved cleanup drive · ${marker.merged_count} within 1 m`
       : 'Approved cleanup drive';
 
+    const photoUrl = marker.preview_photo_url ? escapeHtml(marker.preview_photo_url) : '';
+    const bgStyle = photoUrl
+      ? `background-image:url('${photoUrl}');background-size:cover;background-position:center;`
+      : 'background:linear-gradient(145deg,#0f766e 0%,#134e4a 100%);';
+
     return `
-      <div id="${cardId}" style="width:256px;height:256px;position:relative;border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 18px 40px rgba(0,0,0,0.28);background:linear-gradient(145deg,#0f766e 0%,#134e4a 100%);font-family:Inter,system-ui,-apple-system,sans-serif;">
+      <div id="${cardId}" style="width:256px;height:256px;position:relative;border-radius:18px;overflow:hidden;cursor:pointer;box-shadow:0 18px 40px rgba(0,0,0,0.28);${bgStyle}font-family:Inter,system-ui,-apple-system,sans-serif;">
         <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0.38) 0%,rgba(0,0,0,0.08) 38%,rgba(0,0,0,0.08) 52%,rgba(0,0,0,0.78) 100%);"></div>
         <div style="position:absolute;top:16px;left:16px;right:16px;font-size:10px;font-weight:600;letter-spacing:0.08em;line-height:1.35;color:rgba(255,255,255,0.95);text-shadow:0 1px 4px rgba(0,0,0,0.55);">${location}</div>
         <div style="position:absolute;bottom:16px;left:16px;right:16px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;">
@@ -679,6 +698,14 @@ export function CivicMap({
     }
 
     const sameMarker = openInfoMarkerIdRef.current === markerKey;
+    // #region agent log
+    fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'post-fix',location:'CivicMap.tsx:selectedMarkerEffect',message:'selectedMarker effect run',data:{selectedMarkerId,sameMarker,markerKey,displayMarkersCount:displayMarkers.length,infoWindowOpen:!!infoWindowRef.current?.getMap?.()},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
+    // #endregion
+
+    if (sameMarker && infoWindowRef.current?.getMap?.()) {
+      return;
+    }
+
     openInfoMarkerIdRef.current = markerKey;
 
     const bindPreviewCard = () => {
@@ -723,18 +750,17 @@ export function CivicMap({
     };
 
     const openPreview = () => {
-      if (sameMarker && infoWindowRef.current?.getMap?.()) {
-        infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
-        window.requestAnimationFrame(bindPreviewCard);
-        return;
-      }
       infoWindowRef.current.setContent(contentHtml);
       infoWindowRef.current.open({ map, anchor: marker, shouldFocus: false });
       gmaps.event.addListenerOnce(infoWindowRef.current, 'domready', bindPreviewCard);
     };
 
-    focusMapOnMarker(markerData);
-    gmaps.event.addListenerOnce(map, 'idle', openPreview);
+    const zoomAnimating = ensureMarkerZoom();
+    if (zoomAnimating) {
+      gmaps.event.addListenerOnce(map, 'idle', openPreview);
+    } else {
+      openPreview();
+    }
   }, [map, displayMarkers, selectedMarkerId]);
 
   if (mapError) {

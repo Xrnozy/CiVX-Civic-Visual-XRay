@@ -7,6 +7,7 @@ import {
 interface Props {
   title: string;
   organizerName: string;
+  organizerLogoUrl?: string | null;
   organizerPhotoUrl?: string | null;
   bannerUrl?: string | null;
 }
@@ -20,8 +21,9 @@ function organizerInitials(name: string) {
     .join('');
 }
 
-export function EventDetailHeader({ title, organizerName, organizerPhotoUrl, bannerUrl }: Props) {
-  const avatarSrc = organizerPhotoUrl?.trim() || ORGANIZER_AVATAR_PLACEHOLDER;
+export function EventDetailHeader({ title, organizerName, organizerLogoUrl, organizerPhotoUrl, bannerUrl }: Props) {
+  const avatarSrc = organizerLogoUrl?.trim() || organizerPhotoUrl?.trim() || ORGANIZER_AVATAR_PLACEHOLDER;
+  const hasOrganizerImage = Boolean(organizerLogoUrl?.trim() || organizerPhotoUrl?.trim());
   const bannerSrc = bannerUrl?.trim() || EVENT_BANNER_PLACEHOLDER;
 
   return (
@@ -31,7 +33,7 @@ export function EventDetailHeader({ title, organizerName, organizerPhotoUrl, ban
         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/25 to-black/10" />
         <div className="absolute inset-x-0 bottom-0 flex items-end gap-4 p-5 sm:p-6">
           <div className="relative shrink-0">
-            {organizerPhotoUrl ? (
+            {hasOrganizerImage ? (
               <img
                 src={avatarSrc}
                 alt=""

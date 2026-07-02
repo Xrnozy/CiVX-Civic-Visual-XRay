@@ -20,6 +20,7 @@ interface Props {
   goingCount: number;
   hideFullDetails?: boolean;
   embedded?: boolean;
+  sticky?: boolean;
   volunteerFooter?: ReactNode;
 }
 
@@ -63,19 +64,17 @@ export function OrganizerEventDetailCard({
   goingCount,
   hideFullDetails = false,
   embedded = false,
+  sticky = true,
   volunteerFooter,
 }: Props) {
   const located = hasCoords(event);
+  const cardClassName = embedded
+    ? 'overflow-hidden bg-canvas'
+    : `overflow-hidden rounded-[18px] border border-hairline bg-canvas p-4 transition md:p-6 ${sticky ? 'lg:sticky lg:top-24 lg:self-start' : ''}`;
 
   return (
-    <article
-      className={
-        embedded
-          ? 'overflow-hidden bg-canvas'
-          : 'store-utility-card overflow-hidden bg-canvas lg:sticky lg:top-24 lg:self-start'
-      }
-    >
-      <div className="relative h-44 overflow-hidden bg-primary/10">
+    <article className={cardClassName}>
+      <div className="relative h-44 overflow-hidden rounded-[8px] bg-primary/10">
         <img
           src={eventBannerSrc(event)}
           alt=""
@@ -94,7 +93,7 @@ export function OrganizerEventDetailCard({
         </div>
       </div>
 
-      <div className="space-y-4 p-4">
+      <div className={embedded ? 'space-y-4 p-4' : 'space-y-4 pt-4'}>
         <div>
           <p className="text-sm font-medium text-ink">Location pin</p>
           {located ? (

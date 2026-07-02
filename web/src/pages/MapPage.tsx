@@ -100,6 +100,7 @@ export default function MapPage() {
         title: string;
         barangay?: string;
         scheduled_start?: string;
+        preview_photo_url?: string;
       }>;
     }>(`/api/maps/markers?${params}`)
       .then((d) => {

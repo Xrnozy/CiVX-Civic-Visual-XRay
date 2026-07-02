@@ -59,7 +59,16 @@ def map_markers(issue_type: str | None = None, status: str | None = None, lgu: b
         incident["submitter_type"] = normalize_submitter_type(incident.get("source"))
         incident.update(preview_by_incident_id.get(incident.get("id"), {}))
 
-    events = sb.table("cleanup_events").select("id,title,latitude,longitude,approval_status,scheduled_start").eq("approval_status", "approved").execute().data or []
+    events = (
+        sb.table("cleanup_events")
+        .select("id,title,latitude,longitude,approval_status,scheduled_start,barangay,banner_url")
+        .eq("approval_status", "approved")
+        .execute()
+        .data
+        or []
+    )
+    for event in events:
+        event["preview_photo_url"] = resolve_photo_url(event.get("banner_url"))
     return {
         "incidents": incidents,
         "cleanup_events": events,

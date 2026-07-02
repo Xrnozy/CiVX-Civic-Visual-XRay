@@ -291,11 +291,12 @@ export default function OrganizerCleanupPage() {
                 Select a drive to view details.
               </div>
             ) : (
-              <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+              <div className="space-y-4">
                 <OrganizerEventDetailCard
                   event={selectedEvent}
                   organizerName={organizerName}
                   goingCount={goingCount}
+                  sticky={false}
                 />
                 <div className="store-utility-card bg-canvas p-4">
                   <EventBannerUpload
