@@ -5,7 +5,9 @@ import {
   cleanupStatusClass,
   type CleanupEvent,
 } from '../../components/lgu/CleanupEventDetailPanel';
+import { CleanupRejectionReason } from '../../components/lgu/CleanupRejectionReason';
 import { api } from '../../lib/api';
+import { formatEventSchedulePhase, schedulePhaseListClass } from '../../lib/eventSchedule';
 
 type StatusFilter = 'pending' | 'approved' | 'rejected' | 'all';
 
@@ -94,7 +96,7 @@ export default function LGUCleanupPage() {
           <span className="text-sm text-ink-muted-48">{filtered.length} drive{filtered.length === 1 ? '' : 's'}</span>
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_400px] xl:grid-cols-[1fr_440px]">
+        <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_460px]">
           <div className="space-y-3">
             {loading && filtered.length === 0 && (
               <p className="text-sm text-ink-muted-48">Loading drives…</p>
@@ -106,7 +108,12 @@ export default function LGUCleanupPage() {
                   : 'No drives match this filter.'}
               </div>
             )}
-            {filtered.map((event) => (
+            {filtered.map((event) => {
+              const schedulePhase =
+                event.approval_status === 'approved'
+                  ? formatEventSchedulePhase(event.scheduled_start, event.scheduled_end)
+                  : null;
+              return (
               <button
                 key={event.id}
                 type="button"
@@ -127,15 +134,28 @@ export default function LGUCleanupPage() {
                         {Number(event.latitude).toFixed(5)}, {Number(event.longitude).toFixed(5)}
                       </p>
                     )}
+                    {event.approval_status === 'rejected' ? (
+                      <CleanupRejectionReason reason={event.rejection_reason} compact />
+                    ) : null}
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${cleanupStatusClass(event.approval_status)}`}
-                  >
-                    {event.approval_status.replace('_', ' ')}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold capitalize ${cleanupStatusClass(event.approval_status)}`}
+                    >
+                      {event.approval_status.replace('_', ' ')}
+                    </span>
+                    {schedulePhase ? (
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${schedulePhaseListClass(schedulePhase.variant)}`}
+                      >
+                        {schedulePhase.label}
+                      </span>
+                    ) : null}
+                  </div>
                 </div>
               </button>
-            ))}
+            );
+            })}
           </div>
 
           <div className="lg:sticky lg:top-24 lg:self-start">

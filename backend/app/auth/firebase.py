@@ -77,7 +77,7 @@ async def get_current_user(
     if result.data:
         row = result.data[0]
         _agent_log("firebase.py:get_current_user", "found by firebase_uid", {"userId": row.get("id")}, "H5")
-        role = row.get("role", "citizen")
+        role = (row.get("role") or "citizen").strip()
         if settings.demo_lgu_auto_role and role == "citizen":
             sb.table("users").update({"role": "lgu_staff"}).eq("id", row["id"]).execute()
             role = "lgu_staff"
@@ -112,7 +112,7 @@ async def get_current_user(
                     "email": email,
                 }).eq("id", row["id"]).execute()
                 row["firebase_uid"] = firebase_uid
-            role = row.get("role", "citizen")
+            role = (row.get("role") or "citizen").strip()
             return AuthUser(
                 id=row["id"],
                 firebase_uid=firebase_uid,

@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { CivicMap } from './CivicMap';
 import { ButtonPrimary } from '../ui/Buttons';
-import { DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM } from '../../shared/constants';
+import { DEFAULT_MAP_CENTER, DEFAULT_MAP_PIN_ZOOM, DEFAULT_MAP_ZOOM } from '../../shared/constants';
 
 export const FORM_FIELD_INPUT =
   'w-full rounded-[16px] border border-hairline bg-canvas px-4 py-3 text-sm text-ink outline-none transition placeholder:text-ink-muted-48 focus:border-primary focus:ring-2 focus:ring-primary/20';
@@ -43,6 +43,11 @@ export function LocationPickerSection({
     );
   }
 
+  const mapCenter = selectedLocation
+    ? { lat: selectedLocation.latitude, lng: selectedLocation.longitude }
+    : DEFAULT_MAP_CENTER;
+  const mapZoom = selectedLocation ? DEFAULT_MAP_PIN_ZOOM : DEFAULT_MAP_ZOOM;
+
   const content = (
     <>
       <div>
@@ -53,8 +58,8 @@ export function LocationPickerSection({
       <div className="map-shell mt-4 min-h-[280px]">
         <CivicMap
           markers={[]}
-          center={DEFAULT_MAP_CENTER}
-          zoom={DEFAULT_MAP_ZOOM}
+          center={mapCenter}
+          zoom={mapZoom}
           selectedLocation={selectedLocation}
           onLocationPick={(lat, lng) => pinLocation(lat, lng)}
         />

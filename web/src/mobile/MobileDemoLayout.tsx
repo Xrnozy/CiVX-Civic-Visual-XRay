@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
-import { ensureDemoSession } from './demoSession';
+import { startFreshDemoSession } from './demoSession';
 
 const tabs = [
   { to: '/mobile', label: 'Home', end: true },
@@ -21,7 +21,7 @@ export function MobileDemoLayout() {
     const previousTheme = themeMeta?.getAttribute('content') ?? '#0066cc';
     themeMeta?.setAttribute('content', '#ffffff');
 
-    void ensureDemoSession().catch(() => {});
+    void startFreshDemoSession().catch(() => {});
     return () => {
       document.documentElement.classList.remove('mobile-demo-active');
       document.body.classList.remove('mobile-demo-active');

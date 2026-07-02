@@ -14,6 +14,13 @@ import { getFirebaseAuth, isFirebaseConfigured } from './firebase';
 import { api } from './api';
 import type { AccountType, UserProfile } from '../types/user';
 
+/** Roles that use the LGU portal (/lgu) — cannot upload event gallery photos. */
+export const LGU_PORTAL_ROLES = new Set(['lgu_admin', 'lgu_staff', 'field_worker']);
+
+export function isLguPortalRole(role: string | null | undefined): boolean {
+  return !!role && LGU_PORTAL_ROLES.has(role);
+}
+
 export function redirectPathForRole(role: string): string {
   switch (role) {
     case 'organizer':

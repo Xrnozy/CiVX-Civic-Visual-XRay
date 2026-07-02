@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CivicMap } from '../components/map/CivicMap';
 import {
@@ -115,12 +115,21 @@ export default function MapPage() {
       });
   }, [issueType, status]);
 
-  const markers =
-    mapLayer === 'issues'
-      ? incidentMarkers
-      : mapLayer === 'events'
-        ? eventMarkers
-        : [...incidentMarkers, ...eventMarkers];
+  const markers = useMemo(() => {
+    const baseMarkers =
+      mapLayer === 'issues'
+        ? incidentMarkers
+        : mapLayer === 'events'
+          ? eventMarkers
+          : [...incidentMarkers, ...eventMarkers];
+
+    return baseMarkers.map((marker) => {
+      if (marker.type !== 'cleanup') return marker;
+      const bannerUrl = eventDetailsCache[marker.id]?.banner_url?.trim();
+      if (!bannerUrl || marker.preview_photo_url === bannerUrl) return marker;
+      return { ...marker, preview_photo_url: bannerUrl };
+    });
+  }, [eventDetailsCache, eventMarkers, incidentMarkers, mapLayer]);
 
   useEffect(() => {
     const marker = selectedMarker;

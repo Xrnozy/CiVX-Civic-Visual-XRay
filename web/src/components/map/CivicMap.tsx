@@ -702,10 +702,6 @@ export function CivicMap({
     fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'post-fix',location:'CivicMap.tsx:selectedMarkerEffect',message:'selectedMarker effect run',data:{selectedMarkerId,sameMarker,markerKey,displayMarkersCount:displayMarkers.length,infoWindowOpen:!!infoWindowRef.current?.getMap?.()},timestamp:Date.now(),hypothesisId:'D'})}).catch(()=>{});
     // #endregion
 
-    if (sameMarker && infoWindowRef.current?.getMap?.()) {
-      return;
-    }
-
     openInfoMarkerIdRef.current = markerKey;
 
     const bindPreviewCard = () => {

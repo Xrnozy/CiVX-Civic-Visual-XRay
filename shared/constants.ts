@@ -31,8 +31,8 @@ export const INCIDENT_STATUSES = [
   'archived',
 ] as const;
 
-/** Geographic center of Metro Manila (NCR) — Ortigas / Mandaluyong area */
-export const DEFAULT_MAP_CENTER = { lat: 14.55, lng: 121.03 };
+/** Geographic center of Metro Manila (NCR) — Rizal Park / Manila city center */
+export const DEFAULT_MAP_CENTER = { lat: 14.5995, lng: 120.9842 };
 export const DEFAULT_MAP_ZOOM = 11;
 export const DEFAULT_MAP_PIN_ZOOM = 13;
 

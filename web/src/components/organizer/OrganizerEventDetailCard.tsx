@@ -1,5 +1,9 @@
 import { type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { CleanupRejectionReason } from '../lgu/CleanupRejectionReason';
+import { formatEventSchedulePhase, schedulePhaseClass } from '../../lib/eventSchedule';
+import type { EventParticipant } from '../../types/eventDetail';
+import { EventVolunteerSidebar } from '../events/EventVolunteerSidebar';
 
 export interface OrganizerCleanupEvent {
   id: string;
@@ -7,11 +11,12 @@ export interface OrganizerCleanupEvent {
   description?: string;
   barangay?: string;
   scheduled_start: string;
-  scheduled_end: string;
+  scheduled_end?: string;
   approval_status: string;
   latitude?: number;
   longitude?: number;
   banner_url?: string | null;
+  rejection_reason?: string | null;
 }
 
 interface Props {
@@ -22,6 +27,10 @@ interface Props {
   embedded?: boolean;
   sticky?: boolean;
   volunteerFooter?: ReactNode;
+  participants?: EventParticipant[];
+  participantsLoading?: boolean;
+  participantsError?: string;
+  showVolunteerList?: boolean;
 }
 
 const EVENT_CATEGORY_LABEL = 'Cleanup drive';
@@ -66,8 +75,16 @@ export function OrganizerEventDetailCard({
   embedded = false,
   sticky = true,
   volunteerFooter,
+  participants = [],
+  participantsLoading = false,
+  participantsError = '',
+  showVolunteerList = false,
 }: Props) {
   const located = hasCoords(event);
+  const schedulePhase =
+    event.approval_status === 'approved'
+      ? formatEventSchedulePhase(event.scheduled_start, event.scheduled_end)
+      : null;
   const cardClassName = embedded
     ? 'overflow-hidden bg-canvas'
     : `overflow-hidden rounded-[18px] border border-hairline bg-canvas p-4 transition md:p-6 ${sticky ? 'lg:sticky lg:top-24 lg:self-start' : ''}`;
@@ -81,6 +98,15 @@ export function OrganizerEventDetailCard({
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
+        {schedulePhase ? (
+          <div className="absolute left-4 top-4">
+            <span
+              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold shadow-sm ${schedulePhaseClass(schedulePhase.variant)}`}
+            >
+              {schedulePhase.label}
+            </span>
+          </div>
+        ) : null}
         <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
           <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-wide text-white/80">{EVENT_CATEGORY_LABEL}</p>
@@ -128,12 +154,19 @@ export function OrganizerEventDetailCard({
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2">
             <dt className="text-ink-muted-48">Status</dt>
-            <dd>
+            <dd className="flex flex-wrap items-center justify-end gap-2">
               <span
                 className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${approvalStatusClass(event.approval_status)}`}
               >
                 {formatApprovalStatus(event.approval_status)}
               </span>
+              {schedulePhase ? (
+                <span
+                  className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${schedulePhaseClass(schedulePhase.variant)}`}
+                >
+                  {schedulePhase.label}
+                </span>
+              ) : null}
             </dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
@@ -145,6 +178,27 @@ export function OrganizerEventDetailCard({
             <dd className="text-right font-medium text-ink">{formatDateTime(event.scheduled_end)}</dd>
           </div>
         </dl>
+
+        {showVolunteerList ? (
+          <EventVolunteerSidebar
+            participants={participants}
+            loading={participantsLoading}
+            error={participantsError}
+            approvalStatus={event.approval_status}
+            embedded
+          />
+        ) : null}
+
+        {event.approval_status === 'rejected' ? (
+          <CleanupRejectionReason reason={event.rejection_reason} />
+        ) : null}
+
+        {event.description ? (
+          <div className="border-t border-hairline pt-4">
+            <p className="text-sm font-medium text-ink">Description</p>
+            <p className="mt-2 text-sm leading-relaxed text-ink-muted-80">{event.description}</p>
+          </div>
+        ) : null}
 
         {volunteerFooter}
 

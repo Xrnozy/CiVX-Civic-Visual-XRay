@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
 from app.db import get_supabase
-from app.models.schemas import CleanupEventBannerUpdate, CleanupEventCreate
+from app.models.schemas import CleanupEventBannerUpdate, CleanupEventCreate, CleanupEventRejectBody
 from app.agents.cleanup_coordination import CleanupCoordinationAgent
 from app.services import attendance as att
 from app.utils.audit import log_audit
@@ -11,6 +11,39 @@ from app.utils.audit import log_audit
 router = APIRouter(prefix="/api/cleanup-events", tags=["cleanup"])
 LGU = ("lgu_admin", "lgu_staff")
 ORGANIZER_AND_LGU = ("organizer", "lgu_admin", "lgu_staff")
+
+
+def _enrich_cleanup_event(row: dict) -> dict:
+    """Ensure rejected events expose rejection_reason when stored on the row or in audit logs."""
+    event = dict(row)
+    if event.get("approval_status") != "rejected":
+        return event
+
+    reason = (event.get("rejection_reason") or "").strip()
+    if reason:
+        event["rejection_reason"] = reason
+        return event
+
+    try:
+        sb = get_supabase()
+        audits = (
+            sb.table("audit_logs")
+            .select("details")
+            .eq("action", "reject_cleanup")
+            .eq("entity_id", event["id"])
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if audits:
+            audit_reason = (audits[0].get("details") or {}).get("reason")
+            if audit_reason and str(audit_reason).strip():
+                event["rejection_reason"] = str(audit_reason).strip()
+    except Exception:
+        pass
+    return event
 
 
 @router.get("")
@@ -25,7 +58,7 @@ def list_events(
         q = q.eq("approval_status", "approved")
     if mine and user:
         q = q.eq("organizer_user_id", user.id)
-    return q.order("scheduled_start", desc=True).limit(100).execute().data
+    return [_enrich_cleanup_event(row) for row in (q.order("scheduled_start", desc=True).limit(100).execute().data or [])]
 
 
 @router.post("")
@@ -58,11 +91,23 @@ def create_event(body: CleanupEventCreate, user: AuthUser = Depends(require_role
 def get_event(event_id: str):
     event = att.get_event(event_id)
     organizer_id = event.get("organizer_user_id")
+    logo_url = att.fetch_organizer_logo(organizer_id)
+    # #region agent log
+    import json, time
+    from pathlib import Path
+    _log = Path(__file__).resolve().parents[3] / "debug-8b92e3.log"
+    try:
+        _log.open("a", encoding="utf-8").write(
+            json.dumps({"sessionId": "8b92e3", "runId": "org-logo-only", "location": "cleanup.py:get_event", "message": "organizer logo fetched", "data": {"event_id": event_id, "organizer_id": organizer_id, "logo_url": logo_url}, "timestamp": int(time.time() * 1000), "hypothesisId": "B"}) + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
     return {
-        **event,
+        **_enrich_cleanup_event(event),
         "going_count": att.public_going_count(event_id),
         "organizer_name": att.fetch_organizer_display_name(organizer_id),
-        "organizer_logo_url": att.fetch_organizer_logo(organizer_id),
+        "organizer_logo_url": logo_url,
         "organizer_profile_photo_url": att.fetch_organizer_profile_photo(organizer_id),
     }
 
@@ -158,17 +203,38 @@ def get_event_attendees(
 @router.post("/{event_id}/approve")
 def approve_event(event_id: str, user: AuthUser = Depends(require_roles(*LGU))):
     sb = get_supabase()
-    sb.table("cleanup_events").update({"approval_status": "approved"}).eq("id", event_id).execute()
+    sb.table("cleanup_events").update({
+        "approval_status": "approved",
+        "rejection_reason": None,
+    }).eq("id", event_id).execute()
     log_audit(user.id, "approve_cleanup", "cleanup_event", event_id, {})
     return {"approval_status": "approved"}
 
 
 @router.post("/{event_id}/reject")
-def reject_event(event_id: str, user: AuthUser = Depends(require_roles(*LGU))):
+def reject_event(
+    event_id: str,
+    body: CleanupEventRejectBody,
+    user: AuthUser = Depends(require_roles(*LGU)),
+):
+    reason = body.reason.strip()
+    if not reason:
+        raise HTTPException(400, "Rejection reason is required")
     sb = get_supabase()
-    sb.table("cleanup_events").update({"approval_status": "rejected"}).eq("id", event_id).execute()
-    log_audit(user.id, "reject_cleanup", "cleanup_event", event_id, {})
-    return {"approval_status": "rejected"}
+    updated = (
+        sb.table("cleanup_events")
+        .update({
+            "approval_status": "rejected",
+            "rejection_reason": reason,
+        })
+        .eq("id", event_id)
+        .execute()
+        .data
+    )
+    if not updated:
+        raise HTTPException(404, "Event not found")
+    log_audit(user.id, "reject_cleanup", "cleanup_event", event_id, {"reason": reason})
+    return _enrich_cleanup_event(updated[0])
 
 
 @router.get("/{event_id}/package")

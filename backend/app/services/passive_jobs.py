@@ -10,6 +10,14 @@ from uuid import uuid4
 from app.db import get_supabase
 
 
+def _maybe_single_data(query) -> dict[str, Any] | None:
+    """Supabase returns None (not an empty response) when maybe_single finds no row."""
+    resp = query.maybe_single().execute()
+    if resp is None:
+        return None
+    return resp.data
+
+
 def create_capture_session(
     *,
     device_id: str | None,
@@ -31,13 +39,8 @@ def create_capture_session(
 
 def get_capture_session(session_id: str) -> dict[str, Any] | None:
     sb = get_supabase()
-    return (
-        sb.table("passive_capture_sessions")
-        .select("*")
-        .eq("session_id", session_id)
-        .maybe_single()
-        .execute()
-        .data
+    return _maybe_single_data(
+        sb.table("passive_capture_sessions").select("*").eq("session_id", session_id)
     )
 
 
@@ -71,14 +74,7 @@ def create_clip_job(data: dict[str, Any]) -> dict[str, Any]:
 
 def get_clip_job(job_id: str) -> dict[str, Any] | None:
     sb = get_supabase()
-    return (
-        sb.table("passive_clip_jobs")
-        .select("*")
-        .eq("job_id", job_id)
-        .maybe_single()
-        .execute()
-        .data
-    )
+    return _maybe_single_data(sb.table("passive_clip_jobs").select("*").eq("job_id", job_id))
 
 
 def update_clip_job(job_id: str, **fields: Any) -> None:
@@ -125,20 +121,15 @@ def perceptual_hash_exists(phash: str, exclude_job_id: str | None = None) -> boo
     q = sb.table("passive_evidence").select("id").eq("perceptual_hash", phash)
     if exclude_job_id:
         q = q.neq("job_id", exclude_job_id)
-    row = q.limit(1).maybe_single().execute().data
+    row = _maybe_single_data(q.limit(1))
     return row is not None
 
 
 def register_file_hash(sha256: str, job_id: str) -> bool:
     """Returns True if hash is new, False if duplicate replay."""
     sb = get_supabase()
-    existing = (
-        sb.table("passive_file_hashes")
-        .select("sha256")
-        .eq("sha256", sha256)
-        .maybe_single()
-        .execute()
-        .data
+    existing = _maybe_single_data(
+        sb.table("passive_file_hashes").select("sha256").eq("sha256", sha256)
     )
     if existing:
         return False
@@ -148,13 +139,8 @@ def register_file_hash(sha256: str, job_id: str) -> bool:
 
 def hash_exists(sha256: str) -> bool:
     sb = get_supabase()
-    row = (
-        sb.table("passive_file_hashes")
-        .select("sha256")
-        .eq("sha256", sha256)
-        .maybe_single()
-        .execute()
-        .data
+    row = _maybe_single_data(
+        sb.table("passive_file_hashes").select("sha256").eq("sha256", sha256)
     )
     return row is not None
 
@@ -215,15 +201,12 @@ def get_last_device_position(device_id: str) -> tuple[float, float] | None:
     if not device_id:
         return None
     sb = get_supabase()
-    row = (
+    row = _maybe_single_data(
         sb.table("passive_clip_jobs")
         .select("lat,lng,created_at")
         .eq("device_id", device_id)
         .order("created_at", desc=True)
         .limit(1)
-        .maybe_single()
-        .execute()
-        .data
     )
     if not row or row.get("lat") is None:
         return None

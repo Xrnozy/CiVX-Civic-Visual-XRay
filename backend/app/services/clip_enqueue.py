@@ -47,11 +47,6 @@ def enqueue_clip(
         skip_session_check=skip_session_check,
     )
 
-    is_new_hash = passive_jobs.register_file_hash(sha256, jid)
-    if not is_new_hash and "duplicate_hash" not in trust.suspicion_flags:
-        trust.suspicion_flags.append("duplicate_hash")
-        trust.trust_score = max(0.0, trust.trust_score - 0.5)
-
     mode = current_mode(stream_lengths())
 
     job = passive_jobs.create_clip_job({
@@ -74,6 +69,16 @@ def enqueue_clip(
         "gps_trace_json": gps_trace_json or [],
         "status": "trust_checking",
     })
+
+    is_new_hash = passive_jobs.register_file_hash(sha256, jid)
+    if not is_new_hash and "duplicate_hash" not in trust.suspicion_flags:
+        trust.suspicion_flags.append("duplicate_hash")
+        trust.trust_score = max(0.0, trust.trust_score - 0.5)
+        passive_jobs.update_clip_job(
+            jid,
+            trust_score=trust.trust_score,
+            suspicion_flags=trust.suspicion_flags,
+        )
 
     redis_queue.enqueue(STREAM_CLIP, {
         "job_id": jid,

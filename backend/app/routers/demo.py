@@ -1,5 +1,9 @@
+import json
+import logging
+import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
 
@@ -8,8 +12,37 @@ from app.db import get_supabase
 from app.services import demo_sessions
 
 router = APIRouter(prefix="/api/demo", tags=["demo"])
+logger = logging.getLogger(__name__)
 
 DEMO_USER_EMAIL = "mobile-demo@civx.demo"
+CHUNK_HANDLER_REV = "gps_trace_json-v2"
+_DEBUG_LOG_PATHS = (
+    Path(__file__).resolve().parents[3] / "debug-8b92e3.log",
+    Path(__file__).resolve().parents[3] / ".cursor" / "debug-8b92e3.log",
+)
+
+
+def _agent_log(location: str, message: str, data: dict, hypothesis_id: str, run_id: str = "pre-fix") -> None:
+    # #region agent log
+    payload = {
+        "sessionId": "8b92e3",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    line = json.dumps(payload)
+    logger.info("debug %s %s", location, message, extra={"debug_data": data})
+    for log_path in _DEBUG_LOG_PATHS:
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+    # #endregion
 
 
 def _demo_user_id() -> str:
@@ -146,17 +179,18 @@ async def upload_demo_chunk(
     video: UploadFile = File(...),
     x_demo_session: str | None = Header(None, alias="X-Demo-Session"),
 ):
-    import json
+    _agent_log(
+        "demo.py:upload_demo_chunk",
+        "handler entered",
+        {"rev": CHUNK_HANDLER_REV, "session_id": session_id, "chunk_index": chunk_index},
+        "F",
+    )
+    from app.services.passive_jobs import _maybe_single_data
 
     demo = demo_sessions.resolve_session(x_demo_session)
     sb = get_supabase()
-    route = (
-        sb.table("passive_route_sessions")
-        .select("*")
-        .eq("id", session_id)
-        .maybe_single()
-        .execute()
-        .data
+    route = _maybe_single_data(
+        sb.table("passive_route_sessions").select("*").eq("id", session_id)
     )
     if not route or route.get("device_id") != f"demo:{demo['token']}":
         raise HTTPException(status_code=403, detail="Session not found")
@@ -170,27 +204,67 @@ async def upload_demo_chunk(
     lat = trace[-1]["lat"] if trace else None
     lng = trace[-1]["lng"] if trace else None
 
-    chunk = (
-        sb.table("video_chunks")
-        .insert({
-            "route_session_id": session_id,
-            "storage_url": "",
-            "chunk_index": chunk_index,
-            "start_time": start_time,
-            "end_time": end_time,
-            "gps_trace": trace,
-            "matched_latitude": lat,
-            "matched_longitude": lng,
-            "processing_status": "pending",
-        })
-        .execute()
-        .data[0]
+    insert_payload = {
+        "route_session_id": session_id,
+        "storage_url": "",
+        "chunk_index": chunk_index,
+        "start_time": start_time,
+        "end_time": end_time,
+        "gps_trace_json": trace,
+        "processing_status": "pending",
+    }
+    _agent_log(
+        "demo.py:upload_demo_chunk",
+        "chunk insert payload",
+        {"session_id": session_id, "chunk_index": chunk_index, "keys": list(insert_payload.keys())},
+        "A",
     )
+
+    try:
+        chunk = sb.table("video_chunks").insert(insert_payload).execute().data[0]
+    except Exception as exc:
+        _agent_log(
+            "demo.py:upload_demo_chunk",
+            "chunk insert failed",
+            {"session_id": session_id, "error": str(exc)},
+            "A",
+        )
+        raise
 
     from app.services.clip_enqueue import enqueue_clip
 
-    enqueue_clip(chunk["id"], key)
+    try:
+        result = enqueue_clip(
+            content,
+            lat=lat,
+            lng=lng,
+            device_id=route.get("device_id"),
+            user_id=route.get("user_id"),
+            capture_mode="passive_camera",
+            route_session_id=session_id,
+            video_chunk_id=chunk["id"],
+            gps_trace_json=trace,
+            skip_session_check=True,
+        )
+    except Exception as exc:
+        _agent_log(
+            "demo.py:upload_demo_chunk",
+            "enqueue failed",
+            {"session_id": session_id, "chunk_id": chunk["id"], "error": str(exc)},
+            "G",
+        )
+        raise
+
+    sb.table("video_chunks").update({"processing_status": "processing"}).eq("id", chunk["id"]).execute()
     sb.table("passive_route_sessions").update({
-        "total_chunks": (route.get("total_chunks") or 0) + 1,
+        "total_chunks": chunk_index + 1,
     }).eq("id", session_id).execute()
-    return {"chunk_id": chunk["id"], "status": "queued"}
+
+    _agent_log(
+        "demo.py:upload_demo_chunk",
+        "chunk queued",
+        {"chunk_id": chunk["id"], "job_id": result.get("job_id"), "storage_key": key},
+        "C",
+        run_id="post-fix",
+    )
+    return {"chunk_id": chunk["id"], "status": "queued", "job_id": result.get("job_id")}

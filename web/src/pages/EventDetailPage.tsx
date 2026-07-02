@@ -7,7 +7,9 @@ import { EventMapEmbed } from '../components/events/EventMapEmbed';
 import { EventVolunteerSidebar } from '../components/events/EventVolunteerSidebar';
 import { EventPhotoMasonry } from '../components/events/EventPhotoMasonry';
 import { api } from '../lib/api';
+import { isLguPortalRole } from '../lib/auth';
 import { useAuth } from '../hooks/useAuth';
+import { useProfile } from '../hooks/useProfile';
 import type {
   EventParticipant,
   EventPhoto,
@@ -106,6 +108,7 @@ export default function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
   const { user, ready: authReady } = useAuth();
+  const { profile } = useProfile();
   const [event, setEvent] = useState<PublicEventDetail | null>(null);
   const [goingCount, setGoingCount] = useState(0);
   const [participants, setParticipants] = useState<EventParticipant[]>([]);
@@ -114,6 +117,7 @@ export default function EventDetailPage() {
   const [photos, setPhotos] = useState<EventPhoto[]>([]);
   const [canUpload, setCanUpload] = useState(false);
   const [canModerate, setCanModerate] = useState(false);
+  const [canUnhide, setCanUnhide] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
@@ -137,6 +141,9 @@ export default function EventDetailPage() {
     api<PublicEventDetail>(`/api/cleanup-events/${eventId}`)
       .then((data) => {
         if (cancelled) return;
+        // #region agent log
+        fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'org-logo-only',location:'EventDetailPage.tsx:loadEvent',message:'event loaded',data:{eventId,organizerLogoUrl:data.organizer_logo_url??null,organizerName:data.organizer_name??null},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
         setEvent(data);
         setGoingCount(data.going_count ?? 0);
       })
@@ -194,8 +201,9 @@ export default function EventDetailPage() {
       .then((data) => {
         if (!cancelled) {
           setPhotos(data.photos);
-          setCanUpload(data.can_upload);
+          setCanUpload(data.can_upload && !isLguPortalRole(profile?.role));
           setCanModerate(data.can_moderate);
+          setCanUnhide(Boolean(data.can_unhide));
         }
       })
       .catch(() => {
@@ -203,13 +211,14 @@ export default function EventDetailPage() {
           setPhotos([]);
           setCanUpload(false);
           setCanModerate(false);
+          setCanUnhide(false);
         }
       });
 
     return () => {
       cancelled = true;
     };
-  }, [eventId, user]);
+  }, [eventId, user, profile?.role]);
 
   if (!authReady || !user) {
     return (
@@ -260,7 +269,6 @@ export default function EventDetailPage() {
             title={event.title}
             organizerName={event.organizer_name || 'Community organizer'}
             organizerLogoUrl={event.organizer_logo_url}
-            organizerPhotoUrl={event.organizer_profile_photo_url}
             bannerUrl={event.banner_url}
           />
         </div>
@@ -272,6 +280,8 @@ export default function EventDetailPage() {
               photos={photos}
               canUpload={canUpload}
               canModerate={canModerate}
+              canUnhide={canUnhide}
+              approvalStatus={event.approval_status}
               onPhotosChange={setPhotos}
             />
           </div>

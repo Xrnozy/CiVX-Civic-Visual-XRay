@@ -1,20 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import QRCode from 'qrcode';
 
 const PRODUCTION_MOBILE_DEMO = 'https://civx.xrnozy.me/mobile';
-
-interface SessionResponse {
-  token: string;
-  url: string;
-}
 
 interface Props {
   open: boolean;
   onClose: () => void;
 }
 
-function mobileDemoBaseUrl(): string {
+function mobileDemoUrl(): string {
   const envUrl = import.meta.env.VITE_MOBILE_DEMO_URL as string | undefined;
   if (envUrl?.trim()) return envUrl.trim().replace(/\/$/, '');
   if (typeof window !== 'undefined') {
@@ -26,93 +20,26 @@ function mobileDemoBaseUrl(): string {
   return PRODUCTION_MOBILE_DEMO;
 }
 
-function parseApiError(text: string): string {
-  try {
-    const json = JSON.parse(text) as { detail?: string };
-    if (json.detail) return json.detail;
-  } catch {
-    /* plain text */
-  }
-  return text || 'Could not create demo session';
-}
-
-function createClientSession(): SessionResponse {
-  const token =
-    typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID().replace(/-/g, '').slice(0, 22)
-      : `demo${Date.now().toString(36)}`;
-  return {
-    token,
-    url: `${mobileDemoBaseUrl()}?session=${encodeURIComponent(token)}`,
-  };
-}
-
 export function MobileDemoQrPanel({ open, onClose }: Props) {
   const [qrDataUrl, setQrDataUrl] = useState('');
-  const [sessionUrl, setSessionUrl] = useState('');
-  const [sessionToken, setSessionToken] = useState('');
+  const [demoUrl, setDemoUrl] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [offlineMode, setOfflineMode] = useState(false);
-
-  async function applySession(data: SessionResponse, isOffline = false) {
-    const url = data.url || `${mobileDemoBaseUrl()}?session=${encodeURIComponent(data.token)}`;
-    setSessionUrl(url);
-    setSessionToken(data.token);
-    setOfflineMode(isOffline);
-    const qr = await QRCode.toDataURL(url, { width: 220, margin: 2 });
-    setQrDataUrl(qr);
-  }
-
-  async function createSession() {
-    setLoading(true);
-    setError('');
-    setOfflineMode(false);
-    try {
-      const res = await fetch('/api/demo/sessions', { method: 'POST' });
-      if (res.ok) {
-        const data = (await res.json()) as SessionResponse;
-        await applySession(data, false);
-        return;
-      }
-
-      const body = await res.text();
-      if (res.status === 404 || res.status === 502 || res.status === 503) {
-        await applySession(createClientSession(), true);
-        setError(
-          'API session route unavailable — showing a local demo link. Restart the backend API to enable full demo sync.',
-        );
-        return;
-      }
-      throw new Error(parseApiError(body));
-    } catch (e) {
-      try {
-        await applySession(createClientSession(), true);
-        setError(
-          e instanceof Error
-            ? `${e.message}. Using a local demo link — restart the CiVX API if reports should sync to LGU.`
-            : 'Using a local demo link.',
-        );
-      } catch {
-        setError(e instanceof Error ? e.message : 'Could not create demo session');
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
 
   useEffect(() => {
-    if (open) void createSession();
+    if (!open) return;
+    const url = mobileDemoUrl();
+    setDemoUrl(url);
+    setLoading(true);
+    void QRCode.toDataURL(url, { width: 220, margin: 2 })
+      .then(setQrDataUrl)
+      .finally(() => setLoading(false));
   }, [open]);
 
   if (!open) return null;
 
-  const registerHref = sessionToken
-    ? `/register?session=${encodeURIComponent(sessionToken)}&next=${encodeURIComponent('/mobile/account')}`
-    : '/register';
-  const loginHref = sessionToken
-    ? `/login?session=${encodeURIComponent(sessionToken)}&next=${encodeURIComponent('/mobile/account')}`
-    : '/login';
+  // #region agent log
+  fetch('http://127.0.0.1:7872/ingest/4dc94be8-1a7a-40d0-91af-b54fa0029a2e',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'8b92e3'},body:JSON.stringify({sessionId:'8b92e3',runId:'fresh-session',location:'MobileDemoQrPanel.tsx:render',message:'QR panel render',data:{demoUrl,hasSessionParam:demoUrl.includes('session=')},timestamp:Date.now(),hypothesisId:'A'})}).catch(()=>{});
+  // #endregion
 
   return (
     <div className="mobile-demo-qr-overlay" onClick={onClose} data-no-motion>
@@ -137,7 +64,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
 
         <div className="space-y-4 p-5">
           <p className="text-sm text-ink-muted-48">
-            Scan with your phone camera to open the CiVX mobile experience on your device.
+            Scan with your phone camera to open a fresh CiVX mobile demo.
           </p>
 
           <div className="flex justify-center">
@@ -150,44 +77,21 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
             ) : null}
           </div>
 
-          {offlineMode ? (
-            <p className="text-xs text-amber-700">Local demo link (limited sync until API is restarted)</p>
-          ) : null}
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
-
-          {sessionUrl ? (
-            <p className="break-all text-xs text-ink-muted-48">{sessionUrl}</p>
+          {demoUrl ? (
+            <p className="break-all text-xs text-ink-muted-48">{demoUrl}</p>
           ) : null}
 
-          <div className="ui-card text-left" data-no-motion>
-            <p className="ui-card-title">Session account</p>
-            <p className="mt-2 text-sm text-ink-muted-48">
-              Create a CiVX account on your phone to save demo reports to your profile. Your session token stays linked.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Link to={registerHref} className="btn-primary text-sm" onClick={onClose}>
-                Create account
-              </Link>
-              <Link to={loginHref} className="btn-secondary-pill text-sm" onClick={onClose}>
-                Sign in
-              </Link>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap justify-center gap-2">
-            <button type="button" className="btn-primary text-sm" disabled={loading} onClick={() => void createSession()}>
-              Regenerate QR
-            </button>
-            {sessionUrl ? (
+          {demoUrl ? (
+            <div className="flex flex-wrap justify-center gap-2">
               <button
                 type="button"
                 className="btn-secondary-pill text-sm"
-                onClick={() => void navigator.clipboard.writeText(sessionUrl)}
+                onClick={() => void navigator.clipboard.writeText(demoUrl)}
               >
                 Copy link
               </button>
-            ) : null}
-          </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

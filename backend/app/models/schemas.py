@@ -34,6 +34,10 @@ class CleanupEventBannerUpdate(BaseModel):
     banner_url: str
 
 
+class CleanupEventRejectBody(BaseModel):
+    reason: str = Field(min_length=1, max_length=2000)
+
+
 class VolunteerRegister(BaseModel):
     full_name: str
     phone_number: str | None = None

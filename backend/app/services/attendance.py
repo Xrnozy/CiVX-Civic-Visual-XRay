@@ -9,6 +9,8 @@ from app.db import get_supabase
 
 LGU_ROLES = ("lgu_admin", "lgu_staff")
 MONITOR_ROLES = ("lgu_admin", "lgu_staff", "organizer")
+# LGU portal users (incl. field workers) may moderate but must not upload gallery photos.
+EVENT_PHOTO_UPLOAD_BLOCKED_ROLES = frozenset({"lgu_admin", "lgu_staff", "field_worker"})
 
 STATUS_API_TO_DB = {
     "registered": "registered",
@@ -200,16 +202,20 @@ def public_participant_names(event_id: str) -> list[dict[str, Any]]:
     return participants
 
 
-def can_upload_event_photo(event_id: str, user_id: str) -> bool:
+def can_upload_event_photo(event_id: str, user: AuthUser) -> bool:
+    if user.role in EVENT_PHOTO_UPLOAD_BLOCKED_ROLES:
+        return False
     event = get_event(event_id)
-    if event.get("organizer_user_id") == user_id:
+    if event.get("approval_status") != "approved":
+        return False
+    if event.get("organizer_user_id") == user.id:
         return True
     sb = get_supabase()
     rows = (
         sb.table("attendance_records")
         .select("organizer_status,lgu_status")
         .eq("event_id", event_id)
-        .eq("user_id", user_id)
+        .eq("user_id", user.id)
         .limit(1)
         .execute()
         .data
@@ -279,7 +285,10 @@ def fetch_organizer_logo(organizer_user_id: str | None) -> str | None:
     )
     if not rows:
         return None
-    return rows[0].get("organization_logo_url")
+    url = rows[0].get("organization_logo_url")
+    if isinstance(url, str) and url.strip():
+        return url.strip()
+    return None
 
 
 def volunteer_event_status(event_id: str, user_id: str) -> dict[str, Any]:

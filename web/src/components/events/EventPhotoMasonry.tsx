@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
 import { ButtonPrimary } from '../ui/Buttons';
 import { api } from '../../lib/api';
+import { isLguPortalRole } from '../../lib/auth';
+import { useProfile } from '../../hooks/useProfile';
 import type { EventPhoto } from '../../types/eventDetail';
 
 interface Props {
@@ -8,6 +10,8 @@ interface Props {
   photos: EventPhoto[];
   canUpload: boolean;
   canModerate: boolean;
+  canUnhide: boolean;
+  approvalStatus?: string;
   onPhotosChange: (photos: EventPhoto[]) => void;
 }
 
@@ -18,14 +22,22 @@ export function EventPhotoMasonry({
   photos,
   canUpload,
   canModerate,
+  canUnhide,
+  approvalStatus,
   onPhotosChange,
 }: Props) {
+  const { profile } = useProfile();
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState('');
+  const [actionError, setActionError] = useState('');
   const [actionId, setActionId] = useState<string | null>(null);
 
   async function handleUpload(file: File) {
+    if (isLguPortalRole(profile?.role)) {
+      setUploadError('LGU accounts cannot upload event photos.');
+      return;
+    }
     setUploading(true);
     setUploadError('');
     try {
@@ -43,17 +55,26 @@ export function EventPhotoMasonry({
     }
   }
 
-  async function hidePhoto(photoId: string) {
+  async function setPhotoHidden(photoId: string, hidden: boolean) {
     setActionId(photoId);
+    setActionError('');
     try {
-      const updated = await api<EventPhoto>(`/api/cleanup-events/${eventId}/photos/${photoId}`, {
-        method: 'PATCH',
-      });
+      const updated = hidden
+        ? await api<EventPhoto>(`/api/cleanup-events/${eventId}/photos/${photoId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ hidden: true }),
+          })
+        : await api<EventPhoto>(`/api/cleanup-events/${eventId}/photos/${photoId}?hidden=false`, {
+            method: 'PATCH',
+            body: JSON.stringify({ hidden: false }),
+          });
       onPhotosChange(
         canModerate
           ? photos.map((photo) => (photo.id === photoId ? updated : photo))
           : photos.filter((photo) => photo.id !== photoId),
       );
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not update photo');
     } finally {
       setActionId(null);
     }
@@ -62,15 +83,20 @@ export function EventPhotoMasonry({
   async function deletePhoto(photoId: string) {
     if (!window.confirm('Permanently delete this photo?')) return;
     setActionId(photoId);
+    setActionError('');
     try {
       await api(`/api/cleanup-events/${eventId}/photos/${photoId}`, { method: 'DELETE' });
       onPhotosChange(photos.filter((photo) => photo.id !== photoId));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Could not delete photo');
     } finally {
       setActionId(null);
     }
   }
 
   const visiblePhotos = canModerate ? photos : photos.filter((photo) => !photo.hidden);
+  const isApproved = approvalStatus === 'approved';
+  const uploadAllowed = canUpload && isApproved && !isLguPortalRole(profile?.role);
 
   return (
     <section>
@@ -78,10 +104,14 @@ export function EventPhotoMasonry({
         <div>
           <h2 className="text-lg font-semibold text-ink">Event photos</h2>
           <p className="mt-1 text-sm text-ink-muted-48">
-            Share moments from the cleanup drive after check-in, or as the event organizer.
+            {isLguPortalRole(profile?.role)
+              ? 'LGU accounts can review and moderate photos but cannot upload to the gallery.'
+              : isApproved
+                ? 'Share moments from the cleanup drive after check-in, or as the event organizer.'
+                : 'Photos unlock after the cleanup drive is approved.'}
           </p>
         </div>
-        {canUpload ? (
+        {uploadAllowed ? (
           <div className="flex flex-col items-end gap-1">
             <input
               ref={inputRef}
@@ -106,10 +136,13 @@ export function EventPhotoMasonry({
       </div>
 
       {uploadError ? <p className="mt-2 text-sm text-red-600">{uploadError}</p> : null}
+      {actionError ? <p className="mt-2 text-sm text-red-600">{actionError}</p> : null}
 
       {visiblePhotos.length === 0 ? (
         <div className="mt-4 rounded-[16px] border border-dashed border-hairline bg-canvas-parchment px-4 py-12 text-center text-sm text-ink-muted-48">
-          No photos yet. Checked-in volunteers and the organizer can upload here.
+          {isApproved
+            ? 'No photos yet. Checked-in volunteers and the organizer can upload here.'
+            : 'No photos yet. Uploading is available after LGU approval.'}
         </div>
       ) : (
         <div className="mt-4 columns-2 gap-3 md:columns-3">
@@ -138,11 +171,20 @@ export function EventPhotoMasonry({
                         type="button"
                         className="event-photo-action-btn event-photo-action-hide"
                         disabled={actionId === photo.id}
-                        onClick={() => void hidePhoto(photo.id)}
+                        onClick={() => void setPhotoHidden(photo.id, true)}
                       >
                         Hide
                       </button>
-                    ) : null}
+                    ) : (
+                      <button
+                        type="button"
+                        className="event-photo-action-btn event-photo-action-hide"
+                        disabled={actionId === photo.id}
+                        onClick={() => void setPhotoHidden(photo.id, false)}
+                      >
+                        Unhide
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="event-photo-action-btn event-photo-action-delete"

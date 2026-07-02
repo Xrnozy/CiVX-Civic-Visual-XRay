@@ -1,20 +1,68 @@
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 
 from app.auth.firebase import AuthUser, get_current_user
 from app.config import settings
 from app.db import get_supabase
 from app.services import attendance as att
+from app.services.attendance import EVENT_PHOTO_UPLOAD_BLOCKED_ROLES
 from app.utils.storage import parse_supabase_storage_url
 
 router = APIRouter(prefix="/api/cleanup-events", tags=["event-photos"])
+
+
+class EventPhotoVisibilityUpdate(BaseModel):
+    hidden: bool = True
+
+
+def update_photo_visibility(event_id: str, photo_id: str, hidden: bool, user: AuthUser):
+    event = att.get_event(event_id)
+    if not att.can_moderate_event_photos(user, event):
+        raise HTTPException(403, "Not authorized to moderate event photos")
+
+    sb = get_supabase()
+    existing = (
+        sb.table("event_photos")
+        .select("id,event_id")
+        .eq("id", photo_id)
+        .eq("event_id", event_id)
+        .limit(1)
+        .execute()
+        .data
+        or []
+    )
+    if not existing:
+        existing = (
+            sb.table("event_photos")
+            .select("id,event_id")
+            .eq("id", photo_id)
+            .limit(1)
+            .execute()
+            .data
+            or []
+        )
+        if existing and existing[0].get("event_id") != event_id:
+            raise HTTPException(404, "Photo not found for this event")
+    if not existing:
+        raise HTTPException(404, "Photo not found")
+
+    row = (
+        sb.table("event_photos")
+        .update({"hidden": hidden})
+        .eq("id", photo_id)
+        .execute()
+        .data[0]
+    )
+    return row
 
 
 @router.get("/{event_id}/photos")
 def list_event_photos(event_id: str, user: AuthUser = Depends(get_current_user)):
     event = att.get_event(event_id)
     can_moderate = att.can_moderate_event_photos(user, event)
+    can_unhide = can_moderate
     sb = get_supabase()
     rows = (
         sb.table("event_photos")
@@ -29,8 +77,9 @@ def list_event_photos(event_id: str, user: AuthUser = Depends(get_current_user))
         rows = [row for row in rows if not row.get("hidden")]
     return {
         "photos": rows,
-        "can_upload": att.can_upload_event_photo(event_id, user.id),
+        "can_upload": att.can_upload_event_photo(event_id, user),
         "can_moderate": can_moderate,
+        "can_unhide": can_unhide,
     }
 
 
@@ -40,8 +89,15 @@ async def upload_event_photo(
     file: UploadFile = File(...),
     user: AuthUser = Depends(get_current_user),
 ):
-    att.get_event(event_id)
-    if not att.can_upload_event_photo(event_id, user.id):
+    event = att.get_event(event_id)
+    if user.role in EVENT_PHOTO_UPLOAD_BLOCKED_ROLES:
+        raise HTTPException(403, "LGU accounts cannot upload event photos")
+    if event.get("approval_status") != "approved":
+        raise HTTPException(
+            403,
+            "Photos can be uploaded only after the event is approved",
+        )
+    if not att.can_upload_event_photo(event_id, user):
         raise HTTPException(
             403,
             "Not authorized to upload photos for this event",
@@ -89,34 +145,12 @@ async def upload_event_photo(
 def hide_event_photo(
     event_id: str,
     photo_id: str,
+    body: EventPhotoVisibilityUpdate = EventPhotoVisibilityUpdate(),
+    hidden: bool | None = Query(default=None),
     user: AuthUser = Depends(get_current_user),
 ):
-    event = att.get_event(event_id)
-    if not att.can_moderate_event_photos(user, event):
-        raise HTTPException(403, "Not authorized to moderate event photos")
-
-    sb = get_supabase()
-    existing = (
-        sb.table("event_photos")
-        .select("id")
-        .eq("id", photo_id)
-        .eq("event_id", event_id)
-        .limit(1)
-        .execute()
-        .data
-        or []
-    )
-    if not existing:
-        raise HTTPException(404, "Photo not found")
-
-    row = (
-        sb.table("event_photos")
-        .update({"hidden": True})
-        .eq("id", photo_id)
-        .execute()
-        .data[0]
-    )
-    return row
+    next_hidden = body.hidden if hidden is None else hidden
+    return update_photo_visibility(event_id, photo_id, next_hidden, user)
 
 
 @router.delete("/{event_id}/photos/{photo_id}")
