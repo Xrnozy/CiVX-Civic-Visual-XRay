@@ -143,7 +143,7 @@ export default function OrganizerCleanupPage() {
           <form
             id="create-drive"
             onSubmit={createEvent}
-            className="store-utility-card mt-8 grid gap-8 bg-canvas p-6 lg:grid-cols-2 lg:p-8"
+            className="store-utility-card mt-8 grid gap-8 bg-canvas p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:p-8"
           >
             <div className="space-y-4">
               <div>
@@ -252,18 +252,18 @@ export default function OrganizerCleanupPage() {
             {events.length} drive{events.length === 1 ? '' : 's'} · approved drives appear on the public map
           </p>
 
-          <div className="mt-4 grid gap-6 lg:grid-cols-[1fr_460px]">
-            <div className="space-y-3">
+          <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(280px,400px)] xl:grid-cols-[minmax(0,1fr)_440px]">
+            <div className="min-w-0 space-y-3">
               {events.map((ev) => (
                 <button
                   key={ev.id}
                   type="button"
                   onClick={() => setSelectedId(ev.id)}
-                  className={`store-utility-card flex w-full flex-wrap items-center justify-between gap-4 bg-canvas text-left transition ${
+                  className={`store-utility-card flex w-full flex-wrap items-start justify-between gap-3 bg-canvas text-left transition ${
                     selectedId === ev.id ? 'border-primary ring-2 ring-primary/20' : ''
                   }`}
                 >
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="font-semibold text-ink">{ev.title}</p>
                     <p className="mt-1 text-sm text-ink-muted-48">
                       {ev.barangay || '—'} · {new Date(ev.scheduled_start).toLocaleString()}
@@ -287,11 +287,11 @@ export default function OrganizerCleanupPage() {
             </div>
 
             {!selectedEvent ? (
-              <div className="store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48 lg:sticky lg:top-24 lg:self-start">
+              <div className="sticky-below-chrome store-utility-card bg-canvas py-12 text-center text-sm text-ink-muted-48">
                 Select a drive to view details.
               </div>
             ) : (
-              <div className="space-y-4 lg:sticky lg:top-24 lg:self-start">
+              <div className="sticky-below-chrome min-w-0 space-y-4">
                 <OrganizerEventDetailCard
                   event={selectedEvent}
                   organizerName={organizerName}

@@ -72,7 +72,7 @@ export function OrganizerEventDetailCard({
       className={
         embedded
           ? 'overflow-hidden bg-canvas'
-          : 'store-utility-card overflow-hidden bg-canvas lg:sticky lg:top-24 lg:self-start'
+          : 'store-utility-card overflow-hidden bg-canvas'
       }
     >
       <div className="relative h-44 overflow-hidden bg-primary/10">
@@ -82,9 +82,9 @@ export function OrganizerEventDetailCard({
           className="h-full w-full object-cover"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
-          <div className="min-w-0">
-            <p className="text-xs font-medium uppercase tracking-wide text-white/80">{EVENT_CATEGORY_LABEL}</p>
+        <div className="absolute inset-x-0 bottom-0 flex flex-wrap items-end justify-between gap-3 p-4">
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-medium uppercase tracking-wide text-white/80">{EVENT_CATEGORY_LABEL}</p>
             <h3 className="mt-1 truncate text-lg font-semibold text-white">{event.title}</h3>
           </div>
           <div className="shrink-0 rounded-full bg-white/95 px-3 py-1.5 text-center shadow-sm">
@@ -116,20 +116,20 @@ export function OrganizerEventDetailCard({
 
         <dl className="grid gap-3 text-sm">
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Category</dt>
-            <dd className="text-right font-medium text-ink">{EVENT_CATEGORY_LABEL}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Category</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{EVENT_CATEGORY_LABEL}</dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Organized by</dt>
-            <dd className="text-right font-medium text-ink">{organizerName}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Organized by</dt>
+            <dd className="min-w-0 truncate text-right font-medium text-ink">{organizerName}</dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Location</dt>
-            <dd className="text-right font-medium text-ink">{event.barangay || '—'}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Location</dt>
+            <dd className="min-w-0 truncate text-right font-medium text-ink">{event.barangay || '—'}</dd>
           </div>
           <div className="flex items-center justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Status</dt>
-            <dd>
+            <dt className="shrink-0 text-ink-muted-48">Status</dt>
+            <dd className="shrink-0">
               <span
                 className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold capitalize ${approvalStatusClass(event.approval_status)}`}
               >
@@ -138,12 +138,12 @@ export function OrganizerEventDetailCard({
             </dd>
           </div>
           <div className="flex justify-between gap-4 border-b border-hairline pb-2">
-            <dt className="text-ink-muted-48">Start</dt>
-            <dd className="text-right font-medium text-ink">{formatDateTime(event.scheduled_start)}</dd>
+            <dt className="shrink-0 text-ink-muted-48">Start</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{formatDateTime(event.scheduled_start)}</dd>
           </div>
           <div className="flex justify-between gap-4">
-            <dt className="text-ink-muted-48">End</dt>
-            <dd className="text-right font-medium text-ink">{formatDateTime(event.scheduled_end)}</dd>
+            <dt className="shrink-0 text-ink-muted-48">End</dt>
+            <dd className="min-w-0 text-right font-medium text-ink">{formatDateTime(event.scheduled_end)}</dd>
           </div>
         </dl>
 

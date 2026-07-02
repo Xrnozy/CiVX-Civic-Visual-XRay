@@ -6,6 +6,7 @@ export interface PublicEventDetail {
   scheduled_start: string;
   scheduled_end?: string;
   approval_status: string;
+  organizer_user_id?: string;
   latitude?: number;
   longitude?: number;
   going_count?: number;

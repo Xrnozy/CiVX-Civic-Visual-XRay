@@ -3,11 +3,14 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { GlobalNav } from '../components/ui/GlobalNav';
 import { Footer } from '../components/ui/Footer';
 import { EventDetailHeader } from '../components/events/EventDetailHeader';
+import { EventAttendanceQrPanel } from '../components/events/EventAttendanceQrPanel';
 import { EventMapEmbed } from '../components/events/EventMapEmbed';
 import { EventVolunteerSidebar } from '../components/events/EventVolunteerSidebar';
 import { EventPhotoMasonry } from '../components/events/EventPhotoMasonry';
 import { api } from '../lib/api';
 import { useAuth } from '../hooks/useAuth';
+import { useProfile } from '../hooks/useProfile';
+import { isEventEnded, isEventOngoing } from '../shared/eventLifecycle';
 import type {
   EventParticipant,
   EventPhoto,
@@ -102,10 +105,24 @@ function EventSidebarTabs({
   );
 }
 
+function parseApiError(err: unknown, fallback: string): string {
+  if (err instanceof Error) {
+    try {
+      const json = JSON.parse(err.message) as { detail?: string };
+      if (json.detail) return json.detail;
+    } catch {
+      /* plain text */
+    }
+    return err.message || fallback;
+  }
+  return fallback;
+}
+
 export default function EventDetailPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const navigate = useNavigate();
   const { user, ready: authReady } = useAuth();
+  const { profile } = useProfile();
   const [event, setEvent] = useState<PublicEventDetail | null>(null);
   const [goingCount, setGoingCount] = useState(0);
   const [participants, setParticipants] = useState<EventParticipant[]>([]);
@@ -117,6 +134,8 @@ export default function EventDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('details');
+  const [showQr, setShowQr] = useState(false);
+  const [ending, setEnding] = useState(false);
 
   const loginNext = eventId ? `/events/${eventId}` : '/events';
 
@@ -246,6 +265,47 @@ export default function EventDetailPage() {
 
   const startLabel = formatDateTime(event.scheduled_start);
   const endLabel = formatDateTime(event.scheduled_end);
+  const isOrganizer = profile?.id === event.organizer_user_id;
+  const eventOngoing = isEventOngoing(event);
+  const eventEnded = isEventEnded(event.scheduled_end);
+
+  async function handleEndEvent() {
+    if (!eventId || !window.confirm('Are you sure you want to end this event? Volunteers will no longer be able to check in.')) {
+      return;
+    }
+    setEnding(true);
+    try {
+      const updated = await api<{ scheduled_end: string }>(`/api/cleanup-events/${eventId}/end`, {
+        method: 'POST',
+      });
+      setEvent((prev) => (prev ? { ...prev, scheduled_end: updated.scheduled_end } : prev));
+    } catch (err) {
+      window.alert(parseApiError(err, 'Unable to end event.'));
+    } finally {
+      setEnding(false);
+    }
+  }
+
+  const bannerActions =
+    isOrganizer && eventOngoing ? (
+      <>
+        <button
+          type="button"
+          className="rounded-full bg-white/95 px-4 py-2 text-sm font-semibold text-ink shadow-sm transition hover:bg-white"
+          onClick={() => setShowQr(true)}
+        >
+          Show Attendance QR
+        </button>
+        <button
+          type="button"
+          className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700 disabled:opacity-60"
+          disabled={ending}
+          onClick={() => void handleEndEvent()}
+        >
+          {ending ? 'Ending…' : 'End Event'}
+        </button>
+      </>
+    ) : null;
 
   return (
     <div className="min-h-screen bg-canvas-parchment">
@@ -261,8 +321,16 @@ export default function EventDetailPage() {
             organizerName={event.organizer_name || 'Community organizer'}
             organizerPhotoUrl={event.organizer_profile_photo_url}
             bannerUrl={event.banner_url}
+            bannerActions={bannerActions}
           />
         </div>
+
+        <EventAttendanceQrPanel
+          eventId={event.id}
+          eventTitle={event.title}
+          open={showQr}
+          onClose={() => setShowQr(false)}
+        />
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,7fr)_minmax(260px,3fr)] lg:items-start">
           <div className="min-w-0">
@@ -306,7 +374,7 @@ export default function EventDetailPage() {
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-semibold capitalize ${approvalStatusClass(event.approval_status)}`}
                         >
-                          {formatApprovalStatus(event.approval_status)}
+                          {eventEnded ? 'Ended' : formatApprovalStatus(event.approval_status)}
                         </span>
                       </dd>
                     </div>

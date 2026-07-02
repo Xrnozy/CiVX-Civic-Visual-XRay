@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from app.auth.firebase import AuthUser, get_current_user, require_roles
 from app.config import settings
 from app.db import get_supabase
-from app.models.schemas import AttendanceCheckIn, AttendanceRejectBody
+from app.models.schemas import AttendanceCheckIn, AttendanceRejectBody, AttendanceWebCheckIn
 from app.services import attendance as att
 from app.utils.audit import log_audit
 
@@ -245,6 +245,33 @@ def check_in(event_id: str, body: AttendanceCheckIn, user: AuthUser = Depends(ge
         "check_in_longitude": body.longitude,
         "qr_code_id": body.qr_code_id,
         "selfie_url": body.selfie_url,
+        "organizer_status": "checked_in",
+        "lgu_status": "checked_in",
+    }, on_conflict="event_id,user_id").execute()
+    return {"status": "checked-in", "check_in_time": now}
+
+
+@router.post("/events/{event_id}/web-check-in")
+def web_check_in(event_id: str, body: AttendanceWebCheckIn, user: AuthUser = Depends(get_current_user)):
+    sb = get_supabase()
+    event = sb.table("cleanup_events").select("*").eq("id", event_id).single().execute().data
+    if event.get("approval_status") != "approved":
+        raise HTTPException(403, "Check-in is only available for approved events")
+    scheduled_end = event.get("scheduled_end")
+    if scheduled_end:
+        end_dt = datetime.fromisoformat(scheduled_end.replace("Z", "+00:00"))
+        if end_dt <= datetime.now(timezone.utc):
+            raise HTTPException(400, "This event has ended")
+    dist = _haversine(body.latitude, body.longitude, event["latitude"], event["longitude"])
+    if dist > settings.attendance_gps_radius_m:
+        raise HTTPException(400, f"Too far from event ({dist:.0f}m). Move closer and try again.")
+    now = datetime.now(timezone.utc).isoformat()
+    sb.table("attendance_records").upsert({
+        "event_id": event_id,
+        "user_id": user.id,
+        "check_in_time": now,
+        "check_in_latitude": body.latitude,
+        "check_in_longitude": body.longitude,
         "organizer_status": "checked_in",
         "lgu_status": "checked_in",
     }, on_conflict="event_id,user_id").execute()

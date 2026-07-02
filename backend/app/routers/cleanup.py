@@ -1,4 +1,6 @@
 import uuid
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth.firebase import AuthUser, get_current_user, get_optional_user, require_roles
@@ -168,6 +170,33 @@ def reject_event(event_id: str, user: AuthUser = Depends(require_roles(*LGU))):
     sb.table("cleanup_events").update({"approval_status": "rejected"}).eq("id", event_id).execute()
     log_audit(user.id, "reject_cleanup", "cleanup_event", event_id, {})
     return {"approval_status": "rejected"}
+
+
+@router.post("/{event_id}/end")
+def end_event(event_id: str, user: AuthUser = Depends(require_roles("organizer"))):
+    event = att.get_event(event_id)
+    if event.get("organizer_user_id") != user.id:
+        raise HTTPException(403, "Not authorized for this event")
+    if event.get("approval_status") != "approved":
+        raise HTTPException(400, "Only approved events can be ended")
+    scheduled_end = event.get("scheduled_end")
+    if scheduled_end:
+        end_dt = datetime.fromisoformat(scheduled_end.replace("Z", "+00:00"))
+        if end_dt <= datetime.now(timezone.utc):
+            raise HTTPException(400, "Event has already ended")
+    now = datetime.now(timezone.utc).isoformat()
+    sb = get_supabase()
+    updated = (
+        sb.table("cleanup_events")
+        .update({"scheduled_end": now})
+        .eq("id", event_id)
+        .execute()
+        .data
+    )
+    if not updated:
+        raise HTTPException(404, "Event not found")
+    log_audit(user.id, "end_cleanup", "cleanup_event", event_id, {"scheduled_end": now})
+    return {"ended": True, "scheduled_end": now}
 
 
 @router.get("/{event_id}/package")
