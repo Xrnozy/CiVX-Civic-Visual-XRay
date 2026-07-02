@@ -123,7 +123,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
         aria-labelledby="mobile-demo-qr-title"
         data-no-motion
       >
-        <div className="mobile-demo-header border-b border-hairline">
+        <div className="mobile-demo-qr-header">
           <div className="text-left">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">CiVX Mobile</p>
             <p id="mobile-demo-qr-title" className="text-sm font-semibold text-ink">
@@ -135,18 +135,18 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
           </button>
         </div>
 
-        <div className="space-y-4 p-5">
-          <p className="text-sm text-ink-muted-48">
+        <div className="mobile-demo-qr-body">
+          <p className="mobile-demo-qr-lead">
             Scan with your phone camera to open the CiVX mobile experience on your device.
           </p>
 
-          <div className="flex justify-center">
+          <div className="mobile-demo-qr-frame">
             {loading ? (
-              <div className="flex h-[220px] w-[220px] items-center justify-center rounded-2xl bg-canvas-parchment text-sm text-ink-muted-48">
+              <div className="mobile-demo-qr-loading">
                 Generating QR…
               </div>
             ) : qrDataUrl ? (
-              <img src={qrDataUrl} alt="QR code for mobile demo" className="rounded-2xl border border-hairline" width={220} height={220} />
+              <img src={qrDataUrl} alt="QR code for mobile demo" className="mobile-demo-qr-image" width={220} height={220} />
             ) : null}
           </div>
 
@@ -156,17 +156,17 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
           {error ? <p className="text-sm text-red-600">{error}</p> : null}
 
           {sessionUrl ? (
-            <p className="break-all text-xs text-ink-muted-48">{sessionUrl}</p>
+            <p className="mobile-demo-qr-url">{sessionUrl}</p>
           ) : null}
 
-          <div className="ui-card text-left" data-no-motion>
-            <p className="ui-card-title">Session account</p>
-            <p className="mt-2 text-sm text-ink-muted-48">
-              Create a CiVX account on your phone to save demo reports to your profile. Your session token stays linked.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mobile-demo-account-strip" data-no-motion>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="mobile-demo-account-title">Optional account link</p>
+              <p className="mobile-demo-account-copy">Save demo reports to a real profile when needed.</p>
+            </div>
+            <div className="mobile-demo-account-actions">
               <Link to={registerHref} className="btn-primary text-sm" onClick={onClose}>
-                Create account
+                Create
               </Link>
               <Link to={loginHref} className="btn-secondary-pill text-sm" onClick={onClose}>
                 Sign in
@@ -174,7 +174,7 @@ export function MobileDemoQrPanel({ open, onClose }: Props) {
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-center gap-2">
+          <div className="mobile-demo-qr-actions">
             <button type="button" className="btn-primary text-sm" disabled={loading} onClick={() => void createSession()}>
               Regenerate QR
             </button>
